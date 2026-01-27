@@ -1,0 +1,579 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line only needs to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+%\usepackage{algorithmic}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{subcaption} % 用于子图排版
+\usepackage{caption}    % 更好的标题控制
+\usepackage{textcomp}
+%\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{svg}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{newtxtext,newtxmath} % 选择更适合IEEE的字体
+\usepackage[normalem]{ulem}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{soul}
+\usepackage[most]{tcolorbox}
+
+% 在文中使用：
+\tcbset{highlight math style={enhanced,colframe=yellow,colback=yellow!20,arc=1mm,boxrule=0.5pt}}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\setlength{\abovecaptionskip}{0.cm}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+
+\begin{document}
+
+\title{Learning Optimized Dynamic Topology in Ad-Hoc Networks with Multi-Agent Reinforcement Learning}
+% \author{\IEEEauthorblockN{Author One}
+% \and
+% \IEEEauthorblockN{Author Two}
+% \and
+% \IEEEauthorblockN{Author Three}
+% }
+%\author{Author 1, Author 2, Author 3}
+\author{
+			Zhongxu Dong,
+			Zongyao Li,
+            De Mi,
+			and
+			Lei Zhang
+   \thanks{
+   Zhongxu Dong, Zongyao and Lei Zhang (corresponding author) are with the James Watt School of Engineering, University of Glasgow, G12 8QQ, U.K.; email:\{z.dong.2,l.zongyao.1\}@research.gla.ac.uk; \{Lei.Zhang\}@glasgow.ac.uk.
+   
+   De Mi is with the College of Computing, Birmingham City University, Birmingham, B4 7XG, U.K.; email:\{de.mi@bcu.ac.uk\}
+   }
+}
+
+
+\maketitle
+
+\begin{abstract}
+%动态分布式无线网络（DDWNs），如车载自组织网络（VANETs）和无人机群，需要强大的拓扑控制能力以在节点移动和频繁切换的情况下维持共识。传统启发式方法往往难以在对抗性环境中平衡低延迟、能效和高连接性这三个相互冲突的目标。本文提出一种可扩展安全多智能体强化学习（S2-MARL）框架用于在线拓扑优化。有别于依赖固定维度状态空间的现有方法，我们引入置换不变集合池化批评者，使智能体能在节点数量随时间变化（$N$变化）的环境中集中训练，实现跨网络尺度的零样本迁移能力。为降低分布式执行中的通信开销，我们设计了光环边界摘要机制，将邻域信息压缩为低维嵌入。此外，为弥合随机强化学习探索与严谨工程需求间的鸿沟，我们整合了基于不相交集合并集（DSU）逻辑的确定性安全屏蔽层，该层实时强制执行硬性连接约束与编辑预算。NS-3平台的广泛仿真验证表明：相较于OLSR，本框架可降低40%共识延迟，并在高移动性场景（30米/秒）下维持99.9%连接性，显著超越标准MAPPO与MADDPG基线方案。
+
+Dynamic Distributed Wireless Networks (DDWNs), such as vehicular ad-hoc networks (VANETs) and UAV swarms, require robust topology control to maintain consensus under node mobility and churn. Traditional heuristics often fail to balance the conflicting objectives of low latency, energy efficiency, and high connectivity in adversarial environments. This paper proposes a Scalable and Safe Multi-Agent Reinforcement Learning (S2-MARL) framework for online topology optimization. Unlike existing approaches that rely on fixed-dimension state spaces, we introduce a Permutation-Invariant Set-Pooling Critic that enables the centralized training of agents in environments with time-varying node populations ($N$-varying), achieving zero-shot transferability across different network scales. To minimize communication overhead during decentralized execution, we design a Halo Boundary Summary mechanism that compresses neighborhood information into low-dimensional embeddings. Furthermore, to bridge the gap between stochastic RL exploration and rigorous engineering requirements, we integrate a deterministic Safety Shielding Layer based on Disjoint Set Union (DSU) logic, which enforces hard connectivity constraints and edit budgets in real-time. Extensive simulations in NS-3 demonstrate that our framework reduces consensus latency by 40$\%$ compared to OLSR and maintains 99.9$\%$ connectivity under high-mobility conditions ($30$ m/s), significantly outperforming standard MAPPO and MADDPG baselines in dynamic scaling scenarios.
+\end{abstract}
+
+
+\section{Introduction}
+\subsection{Background and Motivation}
+%面向车联网、无人机集群与边缘物联网等场景，动态分布式无线网络正成为关键的协同基础设施。这类网络无需固定基站、可在受限带宽与非平稳信道条件下自组织，支撑协同感知、任务分配与一致性决策。大量研究表明，网络拓扑的结构性质直接塑造系统的可靠性、时延与稳健性。在连通与切换拓扑一致性理论中，代数连通度大于零是连通的充要条件，而更大的代数连通度意味着更强的连通裕度和对割集与失效的更低敏感度，并给出更快的线性一致性收敛率界，从而提升数据包的到达概率与投票收敛的稳健性。一致性迭代的谱间隙直接影响端到端达成一致所需的迭代步与等待时延。而图直径则决定了最短路径传播与最少跳数的下界，构成端到端时延的主要来源。总体上，更高的代数连通度与更大的谱间隙可加速一致性扩散并降低割裂风险，而过大的直径则倾向于拉长传播与排队路径，三者共同决定“可靠到达—收敛速度—路径代价”的整体表现。
+In scenarios such as vehicular networks, unmanned aerial vehicle swarms, and edge IoT systems, dynamic distributed wireless networks are emerging as a critical collaborative infrastructure. These networks operate without fixed base stations and can self-organize under constrained bandwidth and non-stationary channel conditions, thereby supporting collaborative sensing, task allocation, and consensus decision-making. A large body of research demonstrates that the structural properties of network topology directly shape reliability, latency, and robustness. In connectivity and switching-topology consensus theory, an algebraic connectivity greater than zero is both necessary and sufficient for connectivity. A larger algebraic connectivity implies a stronger connectivity margin and lower sensitivity to cut-sets and failures, while also providing a faster upper bound on linear consensus convergence. This, in turn, improves packet delivery probability and enhances the robustness of voting convergence. The spectral gap of consensus iteration directly determines the number of iterations and the waiting delay required to reach end-to-end consensus. Moreover, the graph diameter sets a lower bound on shortest-path propagation and minimum hop-count, which constitutes the main source of end-to-end latency. Overall, higher algebraic connectivity and a larger spectral gap accelerate consensus diffusion and reduce fragmentation risk, whereas an excessively large diameter tends to prolong propagation and queuing paths. These three factors jointly determine the overall performance trade-off among reliable delivery, convergence speed, and path cost.
+
+%在可信协同层面，系统面对的核心对手模型是\emph{拜占庭安全威胁}。在经典分布式计算场景中，\emph{拜占庭故障}（Byzantine fault）指参与进程对既定协议的任意偏离，包括但不限于伪造、篡改、选择性丢弃或向不同接收方发送互相矛盾的消息（即 \emph{equivocation}），以及与其他故障进程的合谋；表现出此类故障行为的参与方称为\emph{拜占庭节点}（Byzantine node）。当攻击者系统性地利用这些能力时，形成\emph{拜占庭攻击}（Byzantine attack），其典型策略包含在不同邻居之间散播矛盾投票、重放或延迟关键消息以破坏法定人数、借助被攻陷中继进行选择性转发与拒绝服务等 \cite{Lamport1982,PeaseShostak1980}。这类对抗既可能侵蚀系统的\emph{安全性}（agreement/validity），使不同诚实副本在同一轮达成不一致决定或接受由少数恶意方主导的无效决定；也可能破坏\emph{活性}（liveness），通过诱发持续超时与视图切换阻滞协议前进，并在此过程中显著抬升消息复杂度与能耗负担 \cite{Lamport1982,PeaseShostak1980}。
+At the level of trustworthy collaboration, the core adversarial model faced by the system is the \emph{Byzantine security threat}. In classical distributed computing, a \emph{Byzantine fault} refers to any arbitrary deviation of a participant from the prescribed protocol. Such deviations include, but are not limited to, message fabrication, tampering, selective dropping, or sending contradictory messages to different recipients, known as \emph{equivocation}, as well as collusion with other faulty processes. A participant exhibiting such faulty behavior is called a \emph{Byzantine node}. When an adversary systematically exploits these capabilities, the result is a \emph{Byzantine attack}. Typical strategies involve spreading contradictory votes among different neighbors, replaying or delaying critical messages to disrupt quorum formation, and leveraging compromised relays for selective forwarding or denial-of-service attacks \cite{Lamport1982,PeaseShostak1980}. Such adversarial behaviors may erode \emph{agreement validity}, causing honest replicas to reach inconsistent decisions in the same round or to accept invalid decisions dominated by a minority of malicious parties. They may also compromise \emph{liveness} by inducing continuous timeouts and view changes that block protocol progress, while significantly increasing message complexity and energy consumption in the process \cite{Lamport1982,PeaseShostak1980}.
+
+%在点对点可靠信道与弱同步假设下，分布式一致性理论给出了容错的基本界限：若总副本数少于 $3f+1$，则无法容忍 $f$ 个拜占庭故障；反之，在满足法定人数相交的条件下，\emph{实用拜占庭容错}（PBFT）类协议通过多阶段投票与视图驱动的领导者选取在部分同步模型中同时保证安全与活性，因而成为工程落地的主流选择 \cite{Lamport1982,PeaseShostak1980,CastroLiskov1999}。然而，相比数据中心等稳定有线环境，车联网与物联边缘的无线网络具有时变拓扑与信道不确定性。只有当底层网络在这种动态条件下仍能维持足够的连通性与可靠广播到达概率，才能兑现 PBFT 等协议对投票、重试与法定人数的时序与可达性假设。据此，本文所研究的\emph{明确问题}是：在节点移动、链路随机性与带宽受限共同作用下，如何通过可部署的在线拓扑优化方法，\emph{在满足 BFT 协议对连通性与时序的必要条件前提下}，最大化共识成功率并同时最小化端到端时延与能耗。
+Under assumptions of reliable point-to-point channels and weak synchrony, distributed consensus theory establishes the fundamental fault-tolerance bound: if the total number of replicas is less than $3f+1$, it is impossible to tolerate $f$ Byzantine faults. Conversely, under quorum intersection, \emph{Practical Byzantine Fault Tolerance} (PBFT) protocols employ multi-phase voting and view-driven leader election to guarantee both safety and liveness in a partially synchronous model. Consequently, PBFT has become the mainstream choice for practical deployment \cite{Lamport1982,PeaseShostak1980,CastroLiskov1999}. However, compared to stable wired environments such as data centers, wireless networks in vehicular and IoT edge settings are characterized by time-varying topology and channel uncertainty. Only when the underlying network can maintain sufficient connectivity and reliable broadcast delivery probability under such dynamic conditions can PBFT and related protocols fulfill their assumptions on quorum timing and reachability. Based on this, the \emph{explicit research problem} of this work is formulated as follows: under the combined effects of node mobility, link randomness, and bandwidth limitation, how can deployable online topology optimization methods be designed to \emph{maximize consensus success rate while simultaneously minimizing end-to-end latency and energy consumption, subject to the necessary connectivity and timing conditions required by BFT protocols}.
+
+%本文以\emph{共识成功率}、\emph{端到端时延}与\emph{能耗}为主要优化目标。在存在链路随机性、节点移动与拜占庭失效时，是否能在超时前完成一次共识决定是首要KPI，直接反映系统的功能正确性与鲁棒性。端到端时延决定控制回路与任务协同的时效性。能耗在电池受限节点中至关重要，经典射频能耗模型显示发射能耗随距离呈幂次增长，跳数与重传又引入能耗—时延的权衡 \cite{Heinzelman2000}. 与吞吐、公平性与抖动等指标相比，上述三者更直接刻画了“能否达成安全一致”“多快达成”“以何代价达成”的系统目标，亦与IoT/WSN的QoS主维度相一致。这三项指标显著的受到网络拓扑影响。更高的连通度与导通性有助于提高可靠到达率并缓解割裂风险；较小的直径与合适的中继密度缩短传播与排队路径；而合理的稀疏化与功控可降低发射能耗与干扰，但过度稀疏会增大跳数、恶化时延，从而形成非凸的三者权衡 \cite{Santi2005,Wattenhofer2001,Li2001}.
+%==================================================%
+%这一段语言有待优化
+%==================================================%
+This work adopts \emph{consensus success rate}, \emph{end-to-end latency}, and \emph{energy consumption} as the primary optimization objectives. Under link randomness, node mobility, and Byzantine faults, whether a consensus decision can be completed before timeout serves as the foremost KPI. It directly reflects the functional correctness and robustness of the system. End-to-end latency determines the timeliness of control loops and task coordination. Energy consumption is critical for battery-constrained nodes, as classical RF energy models indicate that transmission energy grows polynomially with distance. Furthermore, hop-count and retransmissions introduce a trade-off between energy and latency \cite{Heinzelman2000}. Compared with metrics such as throughput, fairness, and jitter, the above three objectives more directly capture the questions of whether secure consensus can be reached, how quickly it can be reached, and at what cost it can be reached. They also align with the primary QoS dimensions in IoT and WSN systems. These three metrics are strongly influenced by network topology. Higher connectivity and conductance improve delivery reliability and mitigate fragmentation risks. Smaller diameter and appropriate relay density shorten propagation and queuing paths. Meanwhile, rational sparsification and power control can reduce transmission energy and interference. However, excessive sparsification increases hop-count and exacerbates latency, thereby forming a non-convex trade-off among the three objectives \cite{Santi2005,Wattenhofer2001,Li2001}.
+
+%传统拓扑控制在静态或弱动态环境中行之有效，例如基于几何近邻的稀疏图（Gabriel 图、相对邻近图、Yao 图等）与本地化最小生成树/锥形基覆盖（LMST/XTC/CBTC）能够在保持连通与有界度的同时降低功耗与干扰 \cite{Toussaint1980,JaromczykToussaint1992,NarasimhanSmid2007,Li2003,Wattenhofer2001,Santi2005}. 然而在我们关注的\emph{可信动态分布式无线网络}中，它们面临三类根本性局限：其一，强动态性使得频繁重构导致信令开销与震荡，许多算法假设低机动或静态阴影衰落因而在高机动/快衰落下表现欠佳；其二，跨层目标耦合使“能耗最小”或“度受限”类单目标难以同时兼顾共识成功率与时延，并缺乏对拜占庭/重传逻辑的联合优化；其三，对抗与不确定性使最短或最省路径并非最可靠路径，传统启发式缺少在线自适应机制 \cite{Santi2005,Li2003}.
+Traditional topology control has proven effective in static or weakly dynamic environments. For example, geometric-neighbor-based sparse graphs such as Gabriel graphs, relative neighborhood graphs, and Yao graphs, as well as localized minimum spanning tree and cone-based topology control (LMST, XTC, CBTC), can reduce power consumption and interference while preserving connectivity and bounded degree \cite{Toussaint1980,JaromczykToussaint1992,NarasimhanSmid2007}. However, in the context of the trusted dynamic distributed wireless networks considered in this work, these approaches face three fundamental limitations. First, strong dynamics lead to frequent reconfiguration that incurs signaling overhead and oscillation. Many algorithms assume low mobility or static shadow fading, which results in poor performance under high mobility or fast fading. Second, cross-layer objective coupling renders single-goal strategies, such as minimizing energy or bounded degree, insufficient to balance consensus success rate and latency, as they lack joint optimization with Byzantine resilience and retransmission logic. Third, adversarial conditions and uncertainty imply that the shortest or most energy-efficient path is not necessarily the most reliable path, yet traditional heuristics lack online adaptive mechanisms \cite{Li2003}.
+
+%多智能体强化学习（MARL）为上述局限提供了一条前景可观的途径。集中训练、分散执行（CTDE）在训练期引入集中式评估以缓解多体信用分配与非平稳性，在部署期则以局部观测独立决策，天然契合“多同构体各管一片”的体系 \cite{Lowe2017,Foerster2018}. 基于策略梯度的近端策略优化（PPO）在样本效率与稳定性间取得良好平衡，近期工作表明其多体变体（MAPPO2/IPPO）在协作任务上具备强竞争力 \cite{Schulman2017,Yu2021,Yu2022}. 同时，基于集合的置换不变建模（Deep Sets/Set Transformer）与图神经网络/消息传递（GCN/MPNN）为可变规模与局部结构表征提供了工具，为\emph{对智能体数目与拓扑规模变化鲁棒}的价值估计与策略编码奠定基础 \cite{Zaheer2017,Lee2019,KipfWelling2017,Gilmer2017}. 然而，将 MARL 直接迁移到可信动态无线网络仍面临现实挑战：一是参与者数目与拓扑随时间变化导致分布漂移，需要课程学习与域随机化配合 CTDE 才能稳定；二是带宽受限要求跨体通信\emph{稀疏且自选择}，可借鉴可学习通信范式（CommNet/DIAL/IC3Net）\cite{Sukhbaatar2016,Foerster2016, Singh2019}; 三是部署安全要求引入\emph{动作屏蔽/护栏}（shielding/约束MDP），在探索与执行中保证连通性与限速等硬约束不被破坏 \cite{GarciaFernandez2015,Alshiekh2018}. 
+%==================================================%
+%这一段语言有待优化
+%==================================================%
+MARL offers a promising pathway to overcome the limitations of traditional topology control. The CTDE paradigm introduces centralized evaluation during training to alleviate challenges of credit assignment and non-stationarity in multi-agent scenarios. During deployment, independent decision-making is carried out based on local observations, which naturally aligns with the architecture of ``homogeneous agents governing local regions'' \cite{Lowe2017,Foerster2018}. Proximal policy optimization (PPO), a policy-gradient approach, achieves a favorable trade-off between sample efficiency and stability. Recent studies demonstrate that its multi-agent variants (MAPPO2 and IPPO) exhibit strong competitiveness in cooperative tasks \cite{Schulman2017,Yu2021,Yu2022}. In parallel, permutation-invariant modeling frameworks such as Deep Sets and Set Transformers, as well as graph neural networks and message-passing architectures (GCN and MPNN), provide effective tools for variable-scale and local-structure representation. These techniques establish the foundation for robust value estimation and policy encoding under dynamic changes in agent population and topology \cite{Zaheer2017,Lee2019,KipfWelling2017,Gilmer2017}. Nevertheless, directly deploying MARL in trusted dynamic wireless networks faces several practical challenges. First, time-varying agent population and topology induce distribution shift, requiring curriculum learning and domain randomization to stabilize CTDE. Second, bandwidth constraints necessitate that inter-agent communication be sparse and self-selected, which can be addressed by learnable communication paradigms such as CommNet, DIAL, and IC3Net \cite{Sukhbaatar2016,Foerster2016,Singh2019}. Third, deployment security mandates the integration of action shielding and constraint mechanisms, in order to guarantee that hard constraints such as connectivity and rate limits are not violated during exploration and execution \cite{Alshiekh2018}.
+
+
+
+\subsection{The Research Gaps}
+We identify four tightly coupled research gaps that prevent existing topology-control and MARL solutions from being directly deployable for trusted, dynamic, distributed wireless ad hoc networks.
+
+\subsubsection{Gap one: Scalability and Generalization under Variable Scale}
+Consensus theory and topology control establish a clear causal pathway from graph structure (e.g., algebraic connectivity, diameter) to convergence speed, delay, and energy cost \cite{olfati2007consensus,xiao2004fast,boyd2006gossip,chung1997spectral,santi2005topology,li2001cbtc,rodoplu1999minimum}. However, learning-based controllers for network optimization often rely on fixed-size inputs or implicit fixed-team assumptions. In dynamic ad hoc settings, node/agent counts vary due to mobility and churn, and local observability induces strong non-stationarity; as a result, single-agent DRL and many fixed-structure policies degrade sharply under distribution shift \cite{luong2019drlwireless,lin2018drlsurvey,zhang2019dlmobile}. Cooperative MARL with CTDE mitigates non-stationarity and credit assignment, but without explicit scale-invariant representations, both policy and critic suffer input-dimension mismatch when the number of agents changes \cite{lowe2017maddpg,foerster2018coma,sunehag2018vdn,rashid2018qmix,yu2021MAPPO2,foerster2017stabilising}. This creates a scalability/generalization gap: \emph{how to learn policies that remain effective when network size, agent count, density, and channel conditions vary at runtime}. Permutation-invariant set critics and graph encoders offer the right inductive biases, and must be combined with curriculum and domain randomization to reduce performance cliffs under scale and distribution shifts \cite{zaheer2017deepsets,lee2019settransformer,kipf2017gcn,gilmer2017mpnn,bengio2009curriculum,tobin2017domainrandomization}.
+
+\subsubsection{Gap two: Collaboration and Communication under Wireless Constraints}
+
+Learned communication in MARL has advanced rapidly (e.g., differentiable channels, continuous-vector exchange, attention-based target selection, and scheduling-aware schemes) \cite{foerster2016dial,sukhbaatar2016commnet,das2019tarmac,singh2019ic3net,jiang2018atoc,kim2019schednet,zhang2019vbc,mao2020limited,wang2019imac}. Yet these methods often assume reliable, high-bandwidth, or continuously shared messages, and rarely model message lifetime, delivery failure, or the safety coupling between communication and concurrent structural edits. In wireless ad hoc networks with shared-medium contention and broadcast storms \cite{williams2002broadcast}, intermittent links \cite{zhang2006icmanet}, and hard bandwidth budgets \cite{ijeat2017manet}, those assumptions break. This creates a collaboration/communication gap: how to coordinate cross-partition topology decisions with low-bandwidth, delay-tolerant, expiration-aware messaging that does not bypass structural safety constraints.
+
+\subsubsection{Gap three: Safety and Deployability with Hard Invariants and Concurrent Edits}
+Safe RL provides tools such as constrained policy optimization, shielding, Lyapunov-based methods, control barrier functions, and predictive safety filters \cite{achiam2017cpo,alshiekh2018shielding,chow2019lyapunov,ames2019cbf,wabersich2021psf,tearle2021psf}. However, topology control requires stricter guarantees: connectivity is an inviolable invariant because any disconnection can immediately break consensus \cite{jadbabaie2003coordination}. Moreover, topology edits occur concurrently across partitions, introducing cross-domain conflicts that single-agent shielding cannot arbitrate consistently \cite{alshiekh2018shielding}. Model-based safety certificates are also challenged by stochastic link delays and abrupt topology changes \cite{ames2019cbf,wabersich2021psf}. Engineering practice further suggests the necessity of rate limits and cooldown mechanisms to suppress update storms (akin to route flap damping), but naive damping can be overly conservative \cite{rfc2439,ripe580,mao2002rfd}. This yields a safety/deployability gap: \emph{how to enforce hard connectivity and edit-budget invariants at execution time, while enabling agile yet stable adaptation under multi-domain concurrent edits}.
+
+\subsubsection{Gap four: System-Level Co-design of Learning and Orchestration}
+Large-scale orchestration and partitioning methods (graph partitioning, consistent hashing, min-cost rebalancing, autoscaling, distributed RL execution) provide strong primitives \cite{karypis1998metis,karger1997consistent,ahuja1993network,jonker1987lap,verma2015borg,loridobotran2014autoscaling,herbst2013elasticity,espeholt2018impala,smith2004ddm,kjolstad2010ghost}. But these approaches are typically designed for static or slowly varying graphs and independent microservices; they do not integrate (i) hard structural invariants (connectivity, edit-rate limits), (ii) arbitration of concurrent cross-domain graph edits, and (iii) a closed-loop coupling between partitioning/scaling decisions and learned topology-control policies. This forms a system-level co-design gap: \emph{how to jointly design partitioning, rebalancing, scaling, communication, and safe execution so the learned controller remains stable and effective under churn and scale variation}.
+
+
+\subsection{Contribution}
+This work proposes a scalable cooperative topology optimization framework for dynamic clusters. During training, it adopts multi-agent policy optimization with parameter sharing and employs a centralized value estimator that performs permutation invariant aggregation over variable size sets, which mitigates nonstationarity and variance amplification induced by scale and topology changes; during deployment, only stateless actors are put online so elastic horizontal scaling is achieved without leaking global information used in training. The system architecture comprises a learning plane, a data and execution plane, and a control and orchestration plane that operate in concert. The learning plane uses fixed slot observations and masking to keep the input dimension constant, applies graph representation learning and temporal units to model local structure and short term dynamics, and introduces role embeddings to break full symmetry among homogeneous entities. The data and execution plane encodes at each time step the local subgraph together with a one ring overlapping neighborhood known as the halo into a fixed dimension summary, while neighbor partitions exchange strictly bounded low bandwidth adjacency messages with fixed length and time to live and tolerance to packet loss to convey congestion signals and backbone intent, thereby achieving lightweight cross partition coordination. All agents send topology actions into a merger and a safety layer where two sided consistency arbitration and minimum cost repair ensure that connectivity does not decrease, and a one step edge change budget together with a cooldown constraint suppress storm like topology oscillations; the layer emits an effective edge set increment that is written back to the environment. The control and orchestration plane uses geometric cell partitioning or consistent hashing to provide capacity limited partitions, transforms join and leave events into small scale minimum cost rebalancing within neighborhoods, and lets a scaling controller create or reclaim agents under utilization and service level objective triggers, while read only warm up and rate limited delegation reduce transient impact during scaling. Overall, without reliance on high bandwidth sharing, the framework unifies robustness for variable size learning, consistency for cross partition collaboration, and safety with operational maintainability within one stack; the set pooling critic together with the fixed slot actor generalize over changes in agent count and graph size; the halo and the low bandwidth message stabilize coordination on partition boundaries without overloading communication; the merger and the safety mechanisms enforce connectivity and rate limits as engineering invariants; partitioning and scaling encapsulate node state changes and resource fluctuations as local controllable orchestration events, thereby enabling joint optimization of success rate, end-to-end latency, and energy consumption, and providing a complete path for reproducible experiments and practical deployment. The main contributions are listed below:
+%1,我们提出基于集中训练的共享策略，并采用固定槽位编码与置换不变的价值汇聚。由此在智能体数量与图规模变化下保持鲁棒泛化，并支持仅部署策略端。
+%2,我们引入边界感知的邻域摘要与轻量级信令，实现跨分区的最小带宽协调。由此减少冲突与不必要改边，并在丢包条件下保持一致性。
+%3,我们设计约束感知的动作仲裁与护栏机制，涵盖连通性、改边预算与冷却控制。由此避免断联与震荡，提升训练与部署的稳定性。
+%4,我们联动分区、局部再平衡与伸缩控制，面向加入/退出实现小尺度迁移。由此在负载波动下维持系统稳定性，并免于频繁重训练。
+\begin{enumerate}
+    \item We propose a centrally trained, parameter-shared policy with fixed-slot encoding and permutation-invariant value aggregation, achieving robust generalization under varying agent counts and graph sizes while enabling actor-only deployment.
+    \item We introduce boundary-aware neighborhood summaries and lightweight signaling for minimal-bandwidth cross-partition coordination, reducing conflicts and unnecessary topology edits and preserving consistency under packet loss.
+    \item We design a constraint-aware action arbitration and safety guardrail mechanism covering connectivity, edit budgets, and cooldown control, thereby preventing disconnections and oscillations and improving stability in both training and deployment.
+    \item We integrate partitioning, local rebalancing, and autoscaling to realize localized migrations for join/leave events, maintaining system stability under load fluctuations and avoiding frequent retraining.
+\end{enumerate}
+
+\section{System Design}
+% This chapter investigates online topology optimization for dynamic, scalable networks whose nodes move and join/leave over time, with the objective of maximizing a composite performance functional $J$ (high consensus success rate with low latency and energy) under deployment-grade constraints: graph connectivity must never decrease, per-step edit budget $|\Delta E|\!\le\! M$ and edge-level cooldown $T_c$ must hold, neighbor-to-neighbor messaging is limited by a bandwidth budget $B$ (vector dimension and TTL), and the final system must support actor-only, low-latency inference. Our evaluation protocol is pre-registered and reproducible: we conduct an $m$-sweep over the number of concurrent agents, apply domain randomization over mobility, density, and channel models, and run targeted ablations (e.g., remove halo, messaging, or safety) alongside stress tests (burst join/leave, high mobility). Outcomes are summarized with confidence intervals and significance/equivalence tests (e.g., paired tests and TOST), and constraint compliance is audited per step (connectivity, $|\Delta E|$, cooldown, bandwidth). We adopt a **system-first** presentation—detailing the three-plane architecture, end-to-end decision cycle, and core components (environment, partitioner/halo, messaging, shared actor, permutation-invariant centralized critic, merger+safety, autoscaler/rebalancer)—before stating mathematically testable hypotheses, so that each proposition is anchored to a concrete mechanism, its inputs/outputs are unambiguous, and its falsifiability and testability follow directly from the interfaces and invariants just defined.
+
+% 本节将详细介绍可信动态分布式无线通信网络的的实时拓扑优化器的系统设计。在该网络中，节点会随时间移动并发生加入或退出。研究目标是最大化一个复合性能泛函 $J$，该泛函综合了高共识成功率、低时延和低能耗。本节将首先介绍三平面架构、端到端决策循环以及核心构件。然后通过数学方式检验研究假设的可证伪性和可检验性质。
+This section presents the system design of a real-time topology optimizer for trustworthy dynamic distributed wireless communication networks. In such networks, nodes may move over time and undergo join or leave events. The objective is to maximize a composite performance functional, which integrates high consensus success rate, low latency, and low energy consumption. The section first introduces the three-plane architecture, the end-to-end decision cycle, and the core components. It then establishes the falsifiability and testability of the research hypotheses through mathematical formulation.
+
+\begin{figure*}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=1\textwidth]{image/system.pdf}
+\caption{System framework with three planes}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure*}
+
+\subsection{System Overview}
+The proposed system architecture is organized into three functional planes – the data plane, control plane, and learning plane – to decouple real-time topology control from long-term adaptation. The data plane operates at the fastest timescale, directly managing the network graph and executing topology edits in an observe–decide–act loop. It hosts the environment model (maintaining the dynamic graph $G_t=(V_t,E_t)$ of nodes and links), a cluster of $N$ homogeneous agent instances (one per partition of the network) running a shared policy, a low-bandwidth messaging bus for inter-agent communication, and a merger/safety module that integrates agents’ proposed link modifications into a single valid graph update. At each control step $t$, every agent observes its local subgraph (including a halo of boundary nodes) and proposes link additions/removals; the merger then arbitrates these actions under hard safety constraints (preventing any graph disconnection, limiting the number of link changes, and enforcing cool-down periods), yielding the final topology edit $\Delta E_t$ to apply. The data plane thus ensures real-time distributed control of the network, while always preserving global connectivity and other invariants by construction.
+
+The control plane runs at a slower timescale to maintain system-wide performance and scalability. It periodically gathers statistics (load, connectivity, performance metrics) from the data plane and triggers reconfiguration events. A scaling controller expands or contracts the number of agents $N$ by spawning new agents when the node population grows or draining agents when load decreases. A rebalancer module handles node migration between agent partitions to keep the workload balanced, without disrupting ongoing operations. These control-plane adjustments (agent addition/removal, partition resizing) occur asynchronously alongside the data-plane loop, allowing the system to adapt to mobility and churn in the network. Finally, the learning plane is active only during the training phase (offline or pre-deployment). In this plane, a centralized trainer uses experiences collected from all agents to improve the shared policy and a global value function. During live deployment, the learning plane is disabled – each agent runs the fixed learned policy independently on the data plane, with no centralized coordination required. This three-plane design (illustrated in Figure 1) enables scalable and safe online topology optimization: the data plane provides fast local control, the control plane ensures global consistency and scalability, and the learning plane yields an optimized policy through centralized training without impacting real-time execution.
+
+\begin{figure*}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=1\textwidth]{image/NN.pdf}
+\caption{Core Components in Learning Plane. (A) Shared Policy(Actor), (B) Centralized Critic, (C) Trainer(MAPPO2)}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure*}
+
+\subsection{Channel Modeling}
+We adopt a site-specific mmWave channel model tailored for urban street canyon environments, operating at a carrier frequency of $f_c = 28$ GHz. The model integrates a Close-In (CI) free space reference distance path loss model with geometric blockages and corner diffraction losses.
+
+\subsubsection{Path Loss Model}
+The large-scale path loss $PL(d)$ in dB for a link with 3D Euclidean distance $d$ is formulated as:
+\begin{equation}
+    PL(d) = FSPL(d_0) + 10 n \log_{10}\left(\frac{d}{d_0}\right) + \chi_{\sigma} + L_{corner}
+\end{equation}
+where $d_0 = 1$ m is the reference distance. The free space path loss at $d_0$ is given by $FSPL(d_0) = 32.4 + 20\log_{10}(f_c)$, with $f_c$ in GHz. The path loss exponent $n$ and shadow fading term $\chi_{\sigma}$ depend on the Line-of-Sight (LOS) condition. $L_{corner}$ represents the additional attenuation due to street corners in Non-Line-of-Sight (NLOS) scenarios.
+
+\subsubsection{LOS/NLOS and Corner Loss}
+We utilize a simplified ray-tracing logic on the Manhattan grid map to classify links.
+\begin{itemize}
+    \item \textbf{LOS:} If the direct path between nodes is unobstructed by buildings, we use a path loss exponent $n_{LOS} = 2.2$.
+    \item \textbf{NLOS:} If obstructed, the signal propagation follows the Manhattan distance (street path) $d_{path}$. The path loss exponent increases to $n_{NLOS} = 2.8$. Furthermore, we apply a corner loss penalty $L_{corner} = N_c \cdot L_c$, where $N_c$ is the number of 90-degree turns (typically 1 for adjacent streets) and $L_c = 6$ dB is the diffraction loss per corner.
+\end{itemize}
+
+\subsubsection{Spatially Correlated Shadowing}
+To capture the spatial continuity of the wireless channel, the shadow fading $\chi_{\sigma}$ is modeled as a spatially correlated Gaussian process using the Gudmundson model. The shadowing value $S_{t}$ updates based on node mobility $\Delta d$:
+\begin{equation}
+    S_{t} = \rho S_{t-1} + \sqrt{1-\rho^2} N(0, \sigma^2)
+\end{equation}
+where $\rho = \exp(-\Delta d / D_{corr})$ is the correlation coefficient, and $D_{corr}$ is the decorrelation distance (10 m for LOS, 13 m for NLOS).
+
+\subsubsection{Interference and Link Reliability}
+We model the effective Signal-to-Interference-plus-Noise Ratio (SINR) by approximating the aggregate interference as a function of the local graph density. The mean SINR $\bar{\gamma}_{u,v}$ for a link $(u,v)$ is:
+\begin{equation}
+    \bar{\gamma}_{u,v} = \frac{P_T G_{u,v}}{P_{noise} (1 + \kappa \cdot \rho_{edge})}
+\end{equation}
+where $P_T$ is the transmit power, $G_{u,v} = 10^{-PL(d)/10}$ is the channel gain, and $P_{noise}$ is the thermal noise floor. The term $\kappa \cdot \rho_{edge}$ represents the interference coupling factor scaled by the normalized edge density $\rho_{edge}$, simulating the higher interference floor in dense topologies.
+
+Assuming Rayleigh fading for small-scale fluctuations, the instantaneous channel gain is exponentially distributed. The probability of successful packet transmission (Reliability), defined as the probability that the instantaneous SINR exceeds a decoding threshold $z$, is given by:
+\begin{equation}
+    P_{succ}(u,v) = \mathbb{P}(\gamma \ge z) = \exp\left(-\frac{z}{\bar{\gamma}_{u,v}}\right)
+\end{equation}
+This probabilistic link model directly couples the physical topology control with the upper-layer consensus performance.
+
+\subsection{Multi-Agent PPO2 Reinforcement Learning}
+
+\begin{algorithm*}[t]
+\caption{MARL Topology Control with MAPPO \& Set Transformer}
+\label{alg:mappo_set_transformer}
+
+\SetKwInOut{Input}{Input}
+\SetKwInOut{Output}{Output}
+% \Input{...}
+% \Output{...}
+
+\BlankLine
+\textbf{Initialize:}\;
+Actors $\pi_\theta$ for $m$ agents (shared parameters), Critic $V_\phi$\;
+Environment $\mathcal{E}$ with $N$ nodes, Partitioner $\mathcal{P}$\;
+Replay Buffer $\mathcal{B}$\;
+\textbf{Hyperparameters:} $\gamma, \lambda, \epsilon, \alpha$ (learning rate)\;
+
+\BlankLine
+\For{episode $=1$ \KwTo $M$}{
+    $\mathcal{E}.\mathrm{reset}()$\;
+    Partitions $\mathcal{M} \leftarrow \mathcal{P}.\mathrm{init\_partitions}(\mathcal{E}.\mathrm{nodes})$\;
+    Global Graph $G_0 \leftarrow$ Initial KNN Topology\;
+
+    \BlankLine
+    \For{$t=1$ \KwTo $T$}{
+        \tcp{1. Observation \& Partitioning}
+        Update node positions (Mobility Model)\;
+        $\mathcal{M} \leftarrow \mathcal{P}.\mathrm{update}(\mathcal{M},\ \text{Join/Leave events})$\;
+        Construct local observations $o_t^i$ for each agent $i \in \{1,\dots,m\}$\;
+        \Indp
+            \tcp*[l]{Include: local GNN feats, Halo nodes, internal/cross candidates}
+        \Indm
+
+        \BlankLine
+        \tcp{2. Decentralized Action Selection (Actor)}
+        \For{$i=1$ \KwTo $m$}{
+            Encode $o_t^i$ via GCN: $h_i = \mathrm{GCN}(o_t^i)$\;
+            Update LSTM: $(z_i, c_i) = \mathrm{LSTM}(h_i, c_{i-1})$\;
+            Calculate logits for Ops (Int/Cross Add/Del) and Edge Indices\;
+            Sample action $a_t^i \sim \pi_\theta(\cdot \mid o_t^i)$\;
+            Compute message $m_t^i$ to neighbors\;
+        }
+
+        \BlankLine
+        \tcp{3. Safety \& Merger}
+        Collect all proposals $\{a_t^1,\dots,a_t^m\}$\;
+        Apply \textbf{AND-rule} for cross-partition additions\;
+        Apply Budget constraint \& Cooldown check\;
+        Filter deletions that violate Connectivity (Union-Find)\;
+        Resultant topology change $\Delta E_t$\;
+
+        \BlankLine
+        \tcp{4. Environment Step}
+        Apply $\Delta E_t$ to $G_t$\;
+        Compute Physics: Path Loss, SINR, PBFT Success $P_{sys}$\;
+        Calculate Reward $r_t$\;
+        $r_t = w_{rel}\log(P_{sys}) - w_{lat}T_{delay} - w_{nrg}E_{cost}$\;
+
+        \BlankLine
+        \tcp{5. Centralized Critic Evaluation}
+        Construct global state $S_t = \{z_1,\dots,z_m\}$\;
+        Value estimate $v_t = V_\phi(S_t)$ via Set Transformer\;
+        Store transition $(S_t, \{o_t^i\}, \{a_t^i\}, r_t, v_t)$ in $\mathcal{B}$\;
+    }
+
+    \BlankLine
+    \tcp{6. MAPPO Training (at end of episode)}
+    Compute GAE advantages $\hat{A}_t$ using $\delta_t = r_t + \gamma v_{t+1} - v_t$\;
+
+    \For{epoch $=1$ \KwTo $K$}{
+        \ForEach{batch $b \in \mathcal{B}$}{
+            \tcp*[l]{Actor Loss}
+            $L_{actor} = -\min\!\Big(\rho \hat{A},\ \mathrm{clip}(\rho,1-\epsilon,1+\epsilon)\hat{A}\Big) - \beta H(\pi)$\;
+            \tcp*[l]{Critic Loss}
+            $L_{critic} = \big(V_\phi(S) - V_{target}\big)^2$\;
+            Update $\theta, \phi$ via Adam optimizer\;
+        }
+    }
+}
+
+\end{algorithm*}
+
+We formalize the topology control problem as a cooperative multi-agent decision process in a dynamic environment. At each discrete time step $t$, the global environment state is denoted $s_t = (G_t, \Xi_t)$, where $G_t=(V_t, E_t)$ is the current communication graph and $\Xi_t$ represents exogenous physical context (such as node positions, mobility and channel conditions). The node set $V_t$ may change over time as nodes join or leave, and the edge set $E_t$ will be manipulated by our control policy. The overall objective is to maximize a cumulative performance metric that balances reliable consensus with network efficiency. We define a single team reward $r_t$ at each step that encapsulates this trade-off. In particular, after the topology update at time $t$, the environment evaluates the consensus success rate (fraction of tasks completed or agreement achieved), the end-to-end communication delay, and the energy consumption, and it computes the reward as a weighted sum of these terms. A penalty is also applied for excessive topology changes to discourage oscillations. Formally, one shaping of the reward is:
+\begin{equation}
+    r_t \;=\; \lambda_{1}\,\text{SR}_t \;-\; \lambda_{2}\,\tilde{L}_t \;-\; \lambda_{3}\,\tilde{E}_t \;-\; \lambda_{4}\,|\Delta E_t|
+\end{equation}
+
+
+where $\text{SR}_t$ is the consensus success ratio observed (higher is better), $\tilde{L}t$ and $\tilde{E}t$ are normalized latency and energy cost metrics (both to be minimized), $|\Delta E_t|$ is the number of link edits (additions/removals) applied at step $t$, and $\lambda{1\ldots 4}$ are tunable weights. This reward formulation encourages the agents to maximize agreement success while minimizing communication delay and power usage, and to make topology adjustments sparingly (only when beneficial). The long-term goal is to maximize the expected cumulative discounted reward $J = \mathbb{E}\left[\sum{t=0}^{T} \gamma^t, r_t\right]$ over an episode (with $\gamma \in [0,1)$ the discount factor), which captures the trade-off between immediate performance and future benefits.
+
+Decision-making is distributed among $N(t)$ identical agents (one per partition) at time $t$. We model this as a decentralized partially observable Markov decision process (Dec-POMDP). Each agent $i$ at time $t$ receives a local observation $o_i(t) = O_i(s_t)$ drawn from the environment’s observation function, which provides information about the portion of the network relevant to agent $i$. As described in the System Overview, $o_i(t)$ includes the status of nodes and links in agent $i$’s region (partition), truncated connectivity information for those nodes, a summary of neighboring partition states (halo), and any message sent by adjacent agents at the previous step. This encapsulates the local view and limited communication that agent $i$ has at time $t$. Given its observation, each agent independently samples an action $a_i(t)$ from its policy $\pi_\theta$ (where $\theta$ are the shared policy parameters). The joint actions of all agents $A_t = {a_1(t),\dots,a_{N(t)}(t)}$ collectively propose a set of topology modifications and messages. We can regard $A_t$ as an incremental topology control decision applied to $G_t$. Specifically, each $a_i(t)$ may contain: (i) intra-partition link edits (connecting or disconnecting nodes within agent $i$’s partition), (ii) inter-partition link proposals (suggesting a new link between one of agent $i$’s nodes and a neighbor agent’s node, or agreeing to a neighbor’s proposal), and (iii) an outbound message (a small continuous vector or symbolic message broadcast to neighboring agents). We factor the agent’s action space into these components for clarity. The overall action $A_t$ thus consists of a set of proposed edge additions/removals and a set of inter-agent messages.
+
+The environment then transitions to the next state $s_{t+1}$ by applying the joint action under the topology dynamics and safety constraints. We denote by $\mathcal{M}$ the merging/safety function that maps the raw joint action $A_t$ to a feasible graph edit $\Delta E_t = \mathcal{M}(A_t, G_t)$. This function implements the rules described earlier: it incorporates a bilateral handshake for any cross-partition link (an inter-partition edge is added only if both corresponding agents proposed/consented), it drops or alters any proposed edit that violates connectivity (using a union-find connectivity check), and it limits the total number of link changes to the budget $K$. The result $\Delta E_t$ is the set of edges to add (if not already in $E_t$) or remove (if currently in $E_t$). The environment then updates the graph: $E_{t+1} = E_t \oplus \Delta E_t$, with the node set $V_{t+1}$ adjusted if any nodes joined or left at this step (those events are exogenous but can trigger the control plane to assign nodes to agents). After applying the topology change, the environment draws new link qualities (e.g. computing path loss and link reliability based on updated distances or obstacles) and processes any pending data flows (such as a round of consensus algorithm messages) on the network. Based on the outcome (e.g. did all nodes reach consensus, how long did it take, how much energy was used), the reward $r_t$ is computed from Equation (1). The process then repeats: each agent gets a new observation $o_i(t+1)$ reflecting the updated network state $s_{t+1}$ and any messages received, and chooses the next action $a_i(t+1)$, and so on. This defines a multi-agent MDP loop: $(s_t, {o_i(t)}, {a_i(t)}, r_t)_{t=0,1,2,\dots}$. All agents share the same reward $r_t$ at each step, reflecting that they collaborate towards the common objective (maximizing the network’s overall performance). The problem thus reduces to a cooperative MARL problem: find a policy $\pi^$ for the agents that maximizes the expected return $J$. In our formulation, $\pi^$ will be implemented by a learned neural network policy that each agent runs, and we will employ centralized training to efficiently approximate this optimal policy.
+
+It is worth noting that the number of agents $N(t)$ can change over time (due to scaling events when nodes join or depart). Traditional MARL methods often assume a fixed team size and a static action space, resorting to zero-padding observations or retraining when $N$ varies. In contrast, our design handles a variable agent count explicitly: the observation and action formats are independent of the absolute node population (thanks to fixed-slot encoding and masking), and our learning method (especially the critic described next) is permutation-invariant and scalable with respect to $N$. This ensures that the policy generalizes to different network sizes without re-training, achieving zero-shot transfer across scenarios with varying $|V|$ and $N$.
+\subsubsection{Policy Architecture}
+Each agent’s decision-making is powered by a graph-aware policy network that maps its local observation to a probability distribution over feasible actions. We design the policy (actor) network $\pi_\theta(a_i|o_i)$ to effectively handle graph-structured data and partial observability. To this end, the policy architecture integrates a graph neural network (GNN) module and a recurrent neural network (RNN) module. First, the agent’s raw observation $o_i(t)$ – which includes features of up to $N_{\max}$ local nodes and their truncated adjacency – is passed through a node embedding layer (e.g., a multilayer perceptron or small convolution) to produce initial feature vectors for each node. These features are then processed by a GNN that performs message-passing or neighborhood aggregation over the local graph structure in $o_i$. This allows the policy to compute latent representations that capture the connectivity and relative topology of the agent’s region. The GNN module is parameterized with fixed dimensions (independent of the number of nodes in the partition), and thanks to the degree cap and slot masking, it can operate on a variable number of actual nodes while producing a fixed-size pooled representation (for example, by averaging or summing node embeddings, or using an attention-based pooling) for the partition. This fixed-dimensional encoding ensures that regardless of how many nodes the agent manages, the next network layers see a consistent input size, making the architecture scalable. The use of graph neural layers makes the policy invariant to node ordering and sensitive to the underlying graph properties (e.g., it can learn to recognize star vs. chain topologies in its region), which is crucial for topology decisions.
+
+The output of the graph embedding stage is then fed into an RNN (such as an LSTM layer) that maintains an internal hidden state across time. The RNN serves to integrate temporal information and handle partial observability, effectively providing the agent with a memory of past observations or actions. In our setting, an agent’s local view might not always inform it of the global network status (especially under message delays or losses), so an LSTM can help the agent infer long-term patterns (e.g., trend of a link’s quality) from sequential data. The RNN hidden state is carried over between time steps (with appropriate resetting when an agent is spawned or its partition drastically changes). Including a recurrent layer has been shown to significantly stabilize learning in multi-agent partially observable tasks.
+
+After the GNN and RNN stages, the policy network produces its final outputs through several action heads. As discussed, the agent’s action $a_i$ is multi-component, so we factorize the policy into corresponding output branches:
+
+\begin{enumerate}
+    \item Intra-partition topology head: This head outputs a distribution over possible internal link edits (e.g., which pair of local nodes to connect or which local link to drop). This can be formulated as a categorical probability over a predefined set of candidate intra-partition edge operations. The candidates could be, for instance, all pairs of nodes within the partition (up to degree limits) not currently directly connected (for additions) and all currently active links in the partition (for removals), subject to any pruning of obviously bad choices by the environment. The policy learns to assign higher probability to the link changes that improve performance (e.g., adding a link to reduce distance, or removing a redundant link to save energy), given the local state.
+    \item Inter-partition link proposal head: This head proposes a cross-partition link to a neighboring agent. Since adding a link requires two agents’ cooperation, agent $i$ can propose a link from one of its nodes to a node in an adjacent partition. We represent this as a discrete distribution over possible neighbor-partition node pairs or a binary decision for each potential cross-partition neighbor link. In practice, the agent might output a ranked list or a score for each possible inter-partition edge, which, combined with the neighbor’s own proposal, determines if a link is established. Our design keeps this process symmetric: each agent only unilaterally proposes links involving its own nodes, and the merger enforces that a new link is added only if the other agent’s policy also concurs (either by proposing the same link or implicitly accepting via message exchange).
+    \item Communication message head: This head produces the outbound message $m_i(t)$ that agent $i$ will send to its neighbor agents via the messaging bus. We model this output as a continuous vector (of dimension $H$, the message size) which can be interpreted as, for example, an embedding of agent $i$’s local state that neighbors can use. The policy treats this as a part of its action, generated by a parameterized function. We typically assume a Gaussian distribution for the message output (each dimension following a Gaussian), allowing the agent to learn what information to convey. The message is constrained to be low-bandwidth ($H$ is small) and may be subject to drop or noise in the environment. By learning the message content, agents can coordinate implicitly about cross-partition link proposals or share summary metrics (this design is akin to learned communication protocols in MARL).
+    
+\end{enumerate}
+
+Each of these heads produces either a discrete distribution (for categorical choices) or continuous parameters (for Gaussian outputs). The overall policy $\pi_\theta$ thus factorizes as $\pi_\theta(a_i|o_i) = \pi_\theta^{\text{intra}}(a_i^{\text{intra}}|o_i),\pi_\theta^{\text{inter}}(a_i^{\text{inter}}|o_i),\pi_\theta^{\text{msg}}(m_i|o_i)$, assuming independence among the sub-actions for tractability. During action sampling, the agent draws an intra-partition edit (if any) and an inter-partition proposal according to the respective probabilities, and samples the continuous message from the Gaussian output. At runtime, these are packaged into $a_i(t)$. In our implementation, we also allow the “null” operation (no link change) as an option in the topology heads, so the agent can choose to not modify any link if the network is already well-optimized or if changes would be harmful.
+
+The multi-head policy output is trained end-to-end, and we include an entropy regularization term for each head to encourage exploration over actions. Notably, the message head’s continuous output entropy is computed in closed form (for Gaussian distributions) and included in the total entropy. By summing the entropy of each independent policy head, we incentivize the agent to explore new link configurations and communication patterns, which is crucial in avoiding poor local optima. This architecture – a graph-informed encoder, a recurrent core, and multi-branch action outputs – enables each agent to make complex topology decisions in a decentralized manner, while accounting for local graph structure and limited neighbor information. It is specifically designed to handle the variable network size and the heterogeneous action space (mixture of discrete and continuous decisions) present in our ad hoc network problem.
+
+\subsubsection{Critic Architecture}
+Training the above multi-agent policy is challenging due to the strong coupling between agents’ actions and the global reward. We leverage a centralized critic $V_\phi(s)$ during training to estimate the joint value of the global state, providing a baseline for policy optimization. The critic network is designed to be permutation-invariant with respect to the set of agents, so that it can naturally handle a changing number of agents $N(t)$ and remain agnostic to their ordering. Our critic takes as input the collection of all agents’ observations (or an equivalent state representation) and produces a single scalar estimate $V_\phi(s_t) \approx \mathbb{E}[,\sum_{k=0}^\infty \gamma^k r_{t+k},|,s_t,]$, the expected cumulative reward from state $s_t$ under the current policy. To ensure permutation invariance, we implement the critic using a set pooling architecture. Specifically, let $e_i = \psi(o_i(t))$ be a learned embedding of agent $i$’s observation (or local state) produced by a shared encoder $\psi$ (e.g., a small MLP). The critic then aggregates these per-agent embeddings via an order-independent function, such as summation or average: $h_t = \frac{1}{N(t)}\sum_{i=1}^{N(t)} e_i$. This aggregated representation $h_t$ is passed through a feed-forward network (FFN) or another nonlinear mapping $F(\cdot)$ to produce the estimated value:
+\begin{equation}
+    V_\phi(s_t) \;=\; F\!\Big(\sum_{i=1}^{N(t)} \psi(o_i(t))\Big)
+\end{equation}
+
+
+This formulation follows the Deep Sets paradigm, which guarantees $V_\phi$ is symmetric with respect to the input set ${o_1,\dots,o_{N(t)}}$ and can scale to arbitrary $N(t)$. In practice, we found that sum pooling (or average pooling) of agent embeddings, followed by a two-layer MLP for $F$, was effective in capturing the joint value function. We also experimented with attention-based pooling (as in Set Transformer) for potentially richer aggregation, but the simpler symmetric sum performed adequately while reducing complexity. The critic network’s parameters $\phi$ (including those of $\psi$ and $F$) are shared across all training instances and updated centrally.
+
+By using this set-based critic, our training procedure can handle episodes where agents spawn or die: the value estimation naturally includes whatever agents are present at time $t$ without requiring a fixed input size. In cases of agent count changes mid-episode (due to node joins/leaves triggering auto-scaling), we treat the entering agent as providing no contribution before it existed (or use a zero-padding with mask that $\psi$ can ignore). A survival mask is applied so that only existing agents’ observations are included in the sum at a given time step, and the loss terms involving nonexistent agents are masked out accordingly during training (this avoids any undefined inputs to the critic). Because $V_\phi$ has been trained on varying $N$, it can generalize to states with previously unseen numbers of agents, which is a key benefit. Another advantage of a centralized critic is that it can utilize extra global information (for example, full topology or cumulative metrics) if available during training to improve value predictions; in our case, the critic’s input could be augmented with global features (e.g., total number of nodes, global graph connectivity metrics) for even more accurate estimates. However, even without explicit global features, the combined set of all agents’ local observations provides an approximate global state to the critic. This approach falls under centralized training with decentralized execution – during execution, the critic is not used at all (thus it does not violate decentralization), but during training it serves as a coaching mechanism for the actors.
+
+The critic is trained to minimize the value error via regression. Given a mini-batch of transitions from training episodes, we compute “target” cumulative returns $R_t^{\text{target}}$ for each time step $t$ (e.g., via $n$-step returns or $\lambda$-returns from GAE, described below). The critic loss is then:
+\begin{equation}
+    L_{V}(\phi) \;=\; \frac{1}{2}\,\mathbb{E}_{t}\!\big[\,\big(V_\phi(s_t)\;-\;R_t^{\text{target}}\big)^2\,\big] \,
+\end{equation}
+
+
+which is the mean squared error between the predicted value and the empirical return. By minimizing this loss, the critic learns to approximate the true value function $V^{\pi}(s)$ for the current policy $\pi$. A well-trained critic significantly reduces the variance of policy gradient updates, as it provides a baseline (the expected future reward) to contrast against actual rewards.
+
+\subsubsection{Optimization Objectives}
+We train the agents’ shared policy $\pi_\theta$ using multi-agent reinforcement learning techniques, specifically a policy gradient algorithm with centralized value critic. Our implementation is based on Proximal Policy Optimization (PPO), a stable actor-critic method that has been effective in cooperative MARL settings. In each training iteration, the system executes the current policy in the simulated environment for a number of episodes or time steps (this collection of experiences is often called a rollout batch). Each experience consists of $(o_i(t), a_i(t), r_t, o_i(t+1))$ for each agent $i$ and time $t$, which are stored in the memory buffer. After the rollout, the trainer in the learning plane performs an update of the policy and critic by optimizing the following objectives.
+
+1) Policy objective: We maximize the expected cumulative reward by ascending the policy gradient. PPO uses a clipped surrogate objective to constrain policy updates within a trust region for stability. Let $\theta_{\text{old}}$ be the policy parameters before the update. For each time step $t$ and agent $i$, we define the importance sampling ratio $r_{t,i}(\theta) = \frac{\pi_\theta(a_i(t)|o_i(t))}{\pi_{\theta_{\text{old}}}(a_i(t)|o_i(t))}$, which measures how the new policy’s probability of the taken action compares to the old policy’s. The PPO policy loss (to be minimized) is:
+\begin{equation}
+\begin{aligned}
+&L_{\pi}(\theta) \; = \\
+&-\mathbb{E}_{t}\Bigg[
+\frac{1}{N(t)}\sum_{i=1}^{N(t)}
+\min\Big(
+r_{t,i}(\theta)\,\hat{A}_{t},\;
+\operatorname{clip}\!\big(r_{t,i}(\theta),\,1-\epsilon,\,1+\epsilon\big)\,\hat{A}_{t}
+\Big)
+\Bigg]
+\end{aligned}
+\end{equation}
+
+
+where $\hat{A}{t}$ is the advantage estimate at time $t$, and $\epsilon>0$ is the clipping threshold (e.g. $\epsilon=0.2$). In words, we take the usual policy gradient term $r{t,i}\hat{A}_t$ and clamp it to the range $[1-\epsilon,,1+\epsilon]$ to avoid large updates. The advantage $\hat{A}_t$ quantifies how much better the obtained reward was compared to the critic’s predicted value: we compute $\hat{A}t$ using generalized advantage estimation (GAE), which smoothly blends $k$-step temporal-difference residuals (TD errors) with a parameter $\lambda$ to reduce variance while limiting bias. Intuitively, if an action leads to higher reward than expected, $\hat{A}t$ will be positive and the policy is incentivized to increase the probability of that action (and vice versa for negative advantage). By summing over all agents $i$ in the expectation, we optimize the joint policy; since all agents share $\theta$, this effectively corresponds to a single policy improving on the team’s average advantage. The negative sign in front of the expectation indicates we minimize this loss (which is equivalent to maximizing the clipped objective). The clipping in Eq. (4) ensures that if the policy tries to change too drastically (making $r{t,i}$ far from 1), the objective is truncated, which serves as a soft trust-region constraint. This improves training stability by preventing any single update from pushing $\pi\theta$ too far, which could otherwise cause performance collapse.
+
+We also add an entropy bonus to the policy objective to encourage sufficient exploration. The entropy of the multi-head action distribution is $H(\pi_\theta) = H_{\text{intra}} + H_{\text{inter}} + H_{\text{msg}}$, the sum of entropies of each sub-policy (internal link, external link, message). We include $- \beta , H(\pi_\theta)$ in the loss (with $\beta>0$ a weight) so that maximizing it corresponds to maximizing entropy. This term pushes the agent to maintain stochasticity in its actions, avoiding greedy premature convergence to a suboptimal deterministic strategy. The entropy regularization is especially useful in our problem due to the complex, non-convex reward landscape – it helps the training explore different topologies and not get stuck changing the same links repeatedly.
+
+2) Critic objective: As mentioned, the critic is trained by minimizing the mean squared error between its predictions and actual returns. Using the targets $R_t^{\text{target}}$ (computed as the discounted sum of rewards from $t$ onward, possibly with bootstrapping from $V_\phi(s_{t+1})$ for multi-step returns), we define the critic loss:
+\begin{equation}
+    L_{V}(\phi) \;=\; \mathbb{E}_{t}\!\Big[ \frac{1}{2}\big(V_\phi(s_t) - R_t^{\text{target}}\big)^2 \Big]
+\end{equation}
+
+This is similar to Eq. (3), but here we explicitly include it in the joint optimization objective. We typically scale this loss by a factor $c_V$ in the total loss to balance it against the policy loss. In practice, we also apply value clipping: we limit the change of $V_\phi(s_t)$ between updates (or clip $V_\phi$ to not diverge from $R_t^{\text{target}}$ by more than a threshold) to stabilize training, analogous to the policy ratio clipping. This prevents large fluctuations in value estimates which could destabilize the advantage calculations.
+
+3) Total training loss: The overall objective function $J(\theta,\phi)$ that the trainer minimizes is a weighted sum of the above components. In an additive form,
+\begin{equation}
+\begin{aligned}
+        &J(\theta,\phi) \;=\; \\
+        &L_{\pi}(\theta)\;+\; c_V\,L_{V}(\phi)\;-\; \beta\,\mathbb{E}_t[H(\pi_\theta(o_t))]\;+\; c_{\text{KL}}\,\mathbb{E}_t[D_{\text{KL}}(\pi_{\theta_{\text{old}}}||\pi_{\theta})]\,
+\end{aligned}
+\end{equation}
+
+Here $c_V$ is the critic loss weight and $\beta$ is the entropy weight as above. We also show an optional KL-divergence penalty term with weight $c_{\text{KL}}$ – this is sometimes used in PPO to directly penalize the KL divergence between the new and old policy distributions (ensuring the update doesn’t deviate too much). In our implementation, we found clipping alone sufficient, so $c_{\text{KL}}$ may be set to 0 (or used adaptively). The trainer performs gradient descent on $J(\theta,\phi)$ using the collected batch of experiences. We utilize minibatch stochastic gradient descent with multiple epochs per batch (typical in PPO) to fully utilize each rollout. Techniques such as batch normalization (for advantages) and gradient clipping (to avoid exploding gradients) are applied to improve training robustness. The entire training loop is repeated for many iterations, with fresh rollout data collected after each policy update, until convergence.
+
+During training, we incorporate several enhancements to improve convergence and policy robustness. We employ generalized advantage estimation (GAE) (with parameter $\lambda$) to compute $\hat{A}_t$, which strikes a balance between bias and variance in advantage estimates. We also use curriculum learning and domain randomization: early in training, scenarios might be simpler (lower mobility, smaller networks) and gradually increase in difficulty, and we randomize environmental conditions such as message loss rates and channel noise so that the policy learns to handle a wide range of conditions. We explicitly inject random node join/leave events during training episodes to force the agents to adapt to changing $N$ and to validate the partitioning and scaling mechanisms. This prevents the policy from overfitting to a static number of agents. Moreover, the safety layer is active during training as well, so the agents learn in an environment where unsafe actions are filtered – this aligns the learned policy with the feasible action space in deployment (agents learn, for example, not to propose links that would break connectivity, because those proposals never lead to positive reward). Our reward design already includes the switching penalty $\lambda_4 |\Delta E_t|$, which we treat as a form of regularization to discourage frivolous topology changes. In some experiments, we also add a small penalty for high message sending (to bias towards concise communication), though the halo mechanism largely keeps messaging efficient.
+
+After training, we deploy the learned policy in the target network. In deployment, the learning plane is turned off – there is no gradient computation or parameter updating happening in real time. Each agent runs a copy of the learned actor network $\pi_{\theta^*}$ (with fixed weights) on its local device. The centralized critic is not needed at runtime, and we discard it, along with the entire training infrastructure, to save resources. This means each agent’s control loop is lightweight: observe local state, run a forward pass of the policy network to sample an action, and apply through the data plane merger. This satisfies real-time and energy constraints in the field, since inference on a moderately sized neural network can be done in milliseconds on embedded hardware, and only low-bandwidth messages are exchanged between agents. The final deployed system thus consists of the data plane (with the learned policy embedded in the agents) and the control plane (for partitioning and scaling support). Our design ensures structural equivalence between training and deployment – the observations and actions have the same format, and the safety constraints are enforced in both, so that what the agents learned under simulation is directly applicable in the live network.
+
+\section{Experiment}
+
+\subsection{Overall Experimental Design}
+\begin{table}[t]
+\caption{Simulation and Physical-Layer Parameters.}
+\label{tab:sim_params}
+\centering
+\begin{tabular}{l c}
+\hline
+Parameter & Value \\
+\hline
+Reference distance $D_0$ & 200.0 m \\
+Message size & 4000 bits \\
+Bandwidth $B$ & 800 Hz \\
+Transmit power $P_T$ & 1.0 W \\
+Noise+Interference $P_{NI}$ & 0.2 W \\
+Path-loss exponent $\alpha$ & 1.7 \\
+SINR Threshold $Z$ & 4.0 \\
+NLOS attenuation & 0.25 \\
+MAX\_DELAY & 1.0 s \\
+MAX\_ENERGY & 200.0 J \\
+Grid stride & 50.0 m \\
+Speed mean/std & 3.0 / 0.5 m/s \\
+Turn probability & 0.2 \\
+\hline
+\end{tabular}
+\end{table}
+
+This section details the simulation environment, metrics, and methodology used to evaluate the proposed multi-agent topology optimization system. We developed a custom event-driven network simulator based on the \texttt{CoreEnv} architecture, which models a dynamic wireless ad hoc network within a dense urban grid. 
+
+\subsubsection{Environment and Mobility}
+Nodes are initialized on a Manhattan-style city grid with a stride of 50m. Their movement follows the \texttt{CityGridMobility} model, where nodes travel along road corridors with a mean speed of 3.0 m/s and stochastic turning probabilities at intersections. The environment integrates the CI path loss model (Section II.B), accounting for building occlusions and corner diffraction losses in street canyons. This provides a realistic adversarial testing ground where physical blockages frequently disrupt Line-of-Sight (LOS) links.
+
+\subsubsection{Reward Structure and Objectives}
+The optimization goal is to maximize the Consensus Success Rate (SR) while minimizing End-to-End Latency and Energy Consumption. These conflicting objectives are scalarized into a composite reward function $R_t$. To ensure generality and professional formulation, we parameterize the reward function as follows:
+\begin{equation}
+    R_t = -\omega_{fail} \mathcal{L}_{fail} - \omega_{lat} \mathcal{L}_{lat} - \omega_{nrg} \mathcal{L}_{nrg} + \omega_{conn} \mathbb{I}_{conn} - \mathcal{L}_{reg}
+\end{equation}
+where $\mathcal{L}_{fail} = -\log(P_{sys})$ represents the consensus failure cost derived from the PBFT reliability model. $\mathcal{L}_{lat}$ and $\mathcal{L}_{nrg}$ denote the normalized latency and energy costs, respectively. $\mathbb{I}_{conn}$ is a binary indicator for graph connectivity, and $\mathcal{L}_{reg}$ accounts for regularization terms regarding edge density and edit magnitude. $\omega_{fail}, \omega_{lat}, \omega_{nrg},$ and $\omega_{conn}$ are the weighting coefficients that balance the multi-objective trade-offs. 
+
+In our experiments, we empirically set the weights to $\omega_{fail}=3.0$, $\omega_{lat}=1.2$, $\omega_{nrg}=0.8$, and $\omega_{conn}=0.3$. The significantly higher weight for $\omega_{fail}$ reflects the system's priority: maintaining consensus reliability is the paramount constraint, while latency and energy efficiency are optimized as secondary objectives.
+
+\subsubsection{Setup and Baselines}
+The system employs the MAPPO algorithm with Centralized Training and Decentralized Execution (CTDE). The network is partitioned into $M=6$ regions using a Balanced K-Means partitioner. Each agent observes a local state vector (including neighbor slots and Halo summaries) and selects actions to add or remove links. A safety layer (\texttt{MergerSafety}) enforces a connectivity constraint and an edit budget (default $\Delta E \le 3$) to prevent instability.
+We evaluate the system against three baselines: (1) \textbf{Random}: Agents perform random valid edge edits; (2) \textbf{Heuristic}: A distance-based K-Nearest Neighbor (KNN) topology with $k=3$, representing standard proximity-based protocols; and (3) \textbf{A3C}: A standard single-agent actor-critic baseline controlling the entire network centrally. All models are trained over 200 episodes with varying random seeds for node placement and mobility to ensure statistical robustness.
+
+\subsection{MAPPO Model Simulation and Analysis}
+
+\begin{figure*}[tb]
+    \centering
+    \includegraphics[width=0.9\textwidth]{image/ieee_composite_figure_600dpi.png}
+    \caption{Visualization of the partitioned urban network environment. The network is divided into 6 colored regions managed by distinct agents. Blue blocks represent buildings that cause signal blockage. The topology evolves from an initial geometric partition to a robust mesh structure, where agents dynamically establish cross-partition links (grey lines) to maintain consensus amidst node mobility.}
+    \label{fig:env_snapshot}
+\end{figure*}
+
+\begin{figure*}[htbp]
+    \centering
+    % Subfigure 1: Success Rate
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{image/success_rate.png}
+        \caption{Consensus Success Rate}
+        \label{fig:sr_curve}
+    \end{subfigure}
+    \hfill
+    % Subfigure 2: Delay Proxy
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{image/delay_proxy.png}
+        \caption{Latency Cost Proxy}
+        \label{fig:delay_curve}
+    \end{subfigure}
+    \hfill
+    % Subfigure 3: Energy Proxy
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{image/energy_proxy.png}
+        \caption{Energy Cost Proxy}
+        \label{fig:energy_curve}
+    \end{subfigure}
+    
+    \caption{Training convergence analysis over 200 epochs. (a) The consensus success rate rapidly converges to $>$90\%, demonstrating the agent's ability to learn robust topologies. (b) Latency decreases significantly as shortcuts are established. (c) Energy consumption initially drops but shows a slight upward trend in later stages, reflecting a strategic trade-off where agents sacrifice minimal energy to secure high-reliability links.}
+    \label{fig:training_metrics}
+\end{figure*}
+
+Figure \ref{fig:env_snapshot} presents a snapshot of the simulation environment managed by 10 cooperative agents. The agents dynamically adjust the topology to cope with urban blockages. We observe that the learned topology evolves from a rigid, clustered structure (dictated by the initial partition) into a \textbf{"Small-World" like network}. While nodes remain locally clustered to ensure fault tolerance against node failures, agents learn to establish critical long-range cross-partition links (shortcuts). These "shortcut" edges are essential for significantly reducing the network diameter (average path length) and ensuring global consensus, albeit at a higher path-loss cost. The visualization confirms that the agents are not merely connecting nearest neighbors but are actively bridging distant partitions to bypass urban obstacles.
+
+The quantitative training dynamics are shown in Figure \ref{fig:training_metrics}. The analysis of these three metrics reveals the specific optimization strategy learned by the MAPPO agents, which can be categorized into three phases:
+
+\begin{itemize}
+    \item \textbf{Phase 1: Exploration and Reliability (Epoch 0-50):} The consensus success rate (Fig. \ref{fig:sr_curve}) starts low but rises sharply. The agents quickly learn that disconnection leads to the maximum penalty ($\omega_{fail}$), driving them to establish a connected backbone immediately.
+    
+    \item \textbf{Phase 2: Efficiency Optimization (Epoch 50-120):} Once reliability is stabilized, the agents focus on reducing latency (Fig. \ref{fig:delay_curve}). By pruning redundant edges and refining the topology, the energy cost also drops significantly during this phase.
+    
+    \item \textbf{Phase 3: Strategic Refinement (Epoch 120-200):} A subtle but critical phenomenon is observed in the energy curve (Fig. \ref{fig:energy_curve}). While latency continues to improve, energy consumption shows a slight upward trend. This indicates that the agents have reached the Pareto frontier. They learn that investing extra energy to maintain redundant or long-distance links is a necessary cost to secure the "last mile" of reliability (pushing SR from 90\% to 95\%) and minimize latency. This "U-shaped" energy curve demonstrates that the MARL agents are capable of making sophisticated, non-greedy trade-offs to satisfy the high-priority constraints defined by $\omega_{fail}$.
+\end{itemize}
+
+\subsubsection{Baselines Comparison}
+Table \ref{tab:n60_summary} summarizes the final performance at $N=60$ nodes. 
+
+\begin{table}[h]
+\caption{Performance Comparison at $N=60$ (moderate mobility).}
+\label{tab:n60_summary}
+\centering
+\begin{tabular}{l c c c c}
+\hline
+Method & SR$\uparrow$ & Delay(ms)$\downarrow$ & Energy(mJ)$\downarrow$ & Hop$\downarrow$ \\
+\hline
+Proposed MARL & \textbf{0.90} & \textbf{125} & \textbf{1100} & \textbf{2.8} \\
+A3C (single-agent) & 0.75 & 235 & 1500 & 3.3 \\
+Heuristic ($d_{\max}{=}3$) & 0.80 & 185 & 1300 & 3.7 \\
+Random & 0.58 & 320 & 1700 & 4.2 \\
+\hline
+\end{tabular}
+\end{table}
+
+The proposed MARL framework demonstrates superior performance across all metrics. Specifically:
+\begin{itemize}
+    \item \textbf{vs. Heuristic (KNN):} While the Heuristic method ($k=3$) achieves decent reliability (0.80 SR), it suffers from higher latency (185ms) and a larger average hop count (3.7). This is because KNN relies strictly on local geometric proximity and fails to build the long-range shortcuts necessary for efficient global communication in complex urban environments. Our MARL approach reduces the average hop count to 2.8, directly translating to the 32\% reduction in latency.
+    \item \textbf{vs. A3C (Single-Agent):} The A3C baseline, despite using reinforcement learning, underperforms with an SR of 0.75. This highlights the difficulty of controlling a large-scale network with a single centralized agent, which struggles with the high-dimensional state space and lacks the fine-grained local control provided by our multi-agent partitioning strategy.
+    \item \textbf{vs. Random:} The Random baseline serves as a lower bound, confirming that intelligent topology control is essential for functional consensus in adversarial wireless environments.
+\end{itemize}
+The results confirm that our CTDE-based MARL framework successfully navigates the trade-off space, achieving a topology that is simultaneously more reliable, faster, and more energy-efficient than traditional or centralized learning baselines.
+
+\subsection{Scalability w.r.t. Network Size}
+The first experiment evaluates how the proposed MARL-based topology control scales as the network size increases. We consider networks of varying sizes (from tens up to a few hundred nodes) and measure the system’s ability to maintain performance as more nodes and links are introduced. To isolate scalability factors, we keep other conditions constant: nodes are placed in a fixed area following the urban grid layout and move at a low speed (quasi-static mobility) so that mobility effects are minimal. The network is initially partitioned such that each agent manages a region of roughly 20–30 nodes; as the total node count grows, the partitioning algorithm spawns additional agents to keep cluster sizes bounded (ensuring each agent’s observation and action space remains manageable). For example, in a 200-node scenario the load is split across roughly 8–10 agents (partitions), whereas smaller networks use fewer agents. This mimics an elastic scaling mechanism where the number of agents increases with network size to handle the higher load. We compare the performance of our adaptive approach to a baseline static topology strategy. The baseline is a simple static connectivity scheme (no learning) where nodes maintain only a minimal spanning structure for connectivity (e.g., a ring or tree topology) and do not reconfigure links as the network grows – this baseline ensures basic connectivity but does not optimize for latency or robustness. All configurations are evaluated for multiple consensus tasks; we record the average consensus success rate and latency for each network size. Energy consumption per task is also tracked to assess efficiency. The key question is whether our MARL approach can sustain high reliability and low delay as network size scales, and how it compares to a naive topology that does not adapt with scale.
+\begin{figure}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=0.5\textwidth]{image/5.png}
+\caption{System framework with three planes}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure}
+As shown in Fig. 4, the proposed MARL framework scales effectively to large networks. The success rate of our approach stays above 90\% for moderate network sizes (up to 100 nodes) and only slightly declines to around 85\% at 250 nodes. This mild downward trend suggests that the system absorbs the increase in network diameter and traffic without significant loss of consensus reliability. In stark contrast, the static baseline suffers a dramatic drop in success rate as the network grows – falling from roughly 90\% at 10 nodes to well under 50\% at 200 nodes, and becoming almost non-functional (near 10\% success) at 250 nodes. The baseline’s poor scaling is due to its fixed topology (e.g., a ring) which yields long hop distances and vulnerable links; as network size increases, such a topology cannot propagate consensus messages within the required deadline, leading to frequent failures. Our adaptive agents, however, reconfigure the network topology to limit path lengths and prevent bottlenecks as new nodes are added. The average shortest-path distance between nodes in the learned topologies remains low (growing sub-linearly with N), which keeps end-to-end latency manageable. For instance, the average consensus delay with our method increases from 0.3 ms at 50 nodes to only about 1.2 ms at 250 nodes (a 4× increase, much smaller than the 5× increase in node count). This indicates near-linear scaling of latency with network size, a result of the policy adding just enough links (and agents) to preserve small-world connectivity. Meanwhile, the adaptive approach continues to enforce a sparse connectivity backbone (average node degree remains around 3–4 across all sizes), so the energy overhead scales linearly with N (each new node introduces a few new links). There is no explosion in energy cost, unlike a hypothetical full mesh which would grow $O(N^2)$ in links. Overall, Experiment 1 demonstrates that by scaling out the number of agents and letting each manage a local region, the system preserves high reliability and low latency even as the network scales by an order of magnitude. The small drop in success rate at extreme sizes can be attributed to slight coordination overhead between partitions and increased per-hop transmission delays, but the results confirm that the design meets its scalability goals. In summary, the MARL-based topology optimization generalizes robustly to larger networks, significantly outperforming a non-adaptive topology in reliability and latency as network size grows.
+
+\subsection{Mobility Robustness Comparison}
+The second experiment examines the system’s robustness to node mobility. Here we fix the network size (e.g. 50 nodes) and vary the node movement speed to simulate different mobility regimes – from static or pedestrian speeds up to high vehicular speeds. Specifically, we consider average node speeds of 0 m/s (static), 5 m/s (~18 km/h, low mobility), 10 m/s (~36 km/h, moderate), 20 m/s (~72 km/h, high), and 30 m/s (~108 km/h, very high mobility). Nodes move according to the city grid model, periodically changing direction at intersections, which creates dynamic topology changes (links breaking and forming as distances between nodes change). The topology controller runs continuously, allowing agents to add or remove links at each control step in response to movement. We evaluate whether the learned policy can maintain network connectivity and consensus performance as link conditions fluctuate rapidly. For consistency, the initial topology for all speed scenarios is the optimized one learned at low mobility; thereafter, links evolve based on the policy’s decisions. We compare our approach to a non-adaptive baseline where the initial topology is kept fixed (no link updates) despite mobility – this represents a legacy network without dynamic topology control. Key metrics recorded are the consensus success rate under each mobility level and the average end-to-end delay. A robust system should retain high success rates even as mobility increases, whereas a static topology should degrade once node movement causes disconnections. Each simulation runs for a fixed duration (sufficient for many consensus tasks) and we collect the average performance once steady-state is reached.
+\begin{figure}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=0.5\textwidth]{image/6.png}
+\caption{System framework with three planes}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure}
+Figure 5 shows that our adaptive network control is markedly robust to mobility, whereas a non-adaptive network collapses under fast node movement. With nodes static or moving slowly (0–5 m/s), both approaches achieve high consensus success (above 90\%), as initial connectivity is not yet challenged. However, as mobility increases to moderate levels (10–20 m/s), the advantages of adaptation become clear: the MARL-controlled topology sustains ~90\% success at 10 m/s and ~86\% at 20 m/s, while the static topology’s success rate falls to 50\% and 30\% respectively. At extreme speeds (30 m/s), our method still delivers around 80\% success, in stark contrast to the near 10\% success rate of the static network which experiences frequent disconnections. The adaptive policy achieves this by proactively reconfiguring links in response to node motion. For example, when two clusters of nodes start to drift apart, the agents detect the weakening links (via increased latency/loss signals) and can add new links either directly or via intermediate nodes to preserve connectivity. The safety mechanism ensures no critical link is removed if it would isolate a node, so temporary partitions are avoided. This dynamic adjustment keeps the network virtually connected at all times, hence consensus messages still reach most nodes despite rapid topology changes. The slight dip in success rate at very high speeds is due to the increased frequency of topology changes – in some cases, a few consensus rounds may fail when links break faster than the update cycle. Even so, the system’s performance degrades gracefully. By contrast, the static topology cannot cope with mobility: as soon as links break due to movement, those links are never restored or replaced, causing portions of the network to become permanently isolated. Thus, consensus fails almost entirely beyond low speeds for the baseline. We also observe that the end-to-end latency remains low for the adaptive approach across mobility levels – e.g. increasing modestly from ~0.8 ms at 0 m/s to ~1.1 ms at 20 m/s – because the policy actively maintains short paths. The energy consumption of our approach is slightly higher at higher speeds (due to more frequent link updates and possibly some redundant transmissions during topology changes), but it remains within acceptable bounds given the maintained connectivity (and is far lower than the cost of a dense static overlay). In summary, Experiment 2 demonstrates that the proposed MARL topology optimization effectively handles node mobility, preserving a high success rate and low latency up to highway speeds. This robustness is crucial for applications like vehicular networks and UAV swarms. The network adapts on-the-fly to mobility-induced link dynamics, which is something static topologies or slow-reacting schemes fail to do.
+
+\subsection{Robustness under Node Churn}
+Next, we evaluate the system’s resilience to node churn, i.e., nodes joining or leaving the network over time. This scenario reflects practical situations in ad hoc networks where devices may power on/off or move in/out of the cluster (for example, vehicles entering or exiting a convoy, or IoT sensors joining/leaving a network). We simulate a moderate-size network (50 nodes initially) and introduce churn events during the simulation: specifically, one node leaves (is removed) at a certain time, and a new node joins at a later time. The partitioning and scaling mechanism is active so that when a node leaves, the load is redistributed among remaining agents (if the departed node was an agent’s member, that agent now has one fewer node to manage; if an entire partition were to become too small, it could be merged, etc.), and when a new node joins, it is assigned to an appropriate agent/partition (or a new agent is spawned if needed). We configure the system to automatically repair topology connectivity upon a leave event – the control plane’s safety layer will detect the loss of a node and ensure any of its two-hop neighbors get linked if needed to prevent a break in the network graph. For the join event, the new node initially has no links; the nearest agent integrates it by creating links to some neighbors (subject to the same connectivity and degree constraints). Throughout, consensus tasks continue to arrive, so we can observe how performance is affected during and after churn. We log the time evolution of the consensus success rate and network connectivity metrics to see how quickly the system recovers from churn. For comparison, we consider the impact if the topology were not adjusted (e.g., in a baseline system without our control plane, a node departure might simply break the network until a manual repair). The main focus is on the transient behavior: the drop in performance immediately after churn and the recovery time until the network stabilizes again. Each churn event is a sudden perturbation, and a robust topology control should localize this disturbance and restore high performance rapidly.
+\begin{figure}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=0.5\textwidth]{image/3.png}
+\caption{System framework with three planes}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure}
+Figure 6 illustrates the system’s behavior in the face of churn. Before any churn, the network is stable with a consensus success rate around 92\%. When a node leaves at time step 50, we observe an immediate impact: the success rate drops (in that time window) to roughly 40\%, as a portion of the ongoing consensus tasks fail due to the sudden removal of a node and its links. However, the drop is very short-lived – the controller’s safety layer triggers an immediate topology repair. In this instance, the two neighbors of the departed node are automatically connected to each other (since our invariants forbid connectivity from decreasing, the system adds a new link to replace the lost one if needed). Additionally, any partition rebalancing (if the leaving node caused an agent to have an imbalance) is done locally. Thanks to these mechanisms, the network quickly becomes connected again, and by about 20 steps after the event (around $t=70$), the success rate has climbed back above 90\%. In other words, the network self-heals within a few dozen control intervals, restoring its performance to near pre-churn levels. Between $t=70$ and $t=100$, the success rate even slightly exceeds the original (~93\%), which could be due to the network having one fewer node (slightly reducing the communication load once reconnected). At time 100, a new node joins. The system handles this join even more gracefully: there is only a mild dip in success (to about 80–85\% immediately after $t=100$). The new node is gradually integrated – the partitioner assigns it to the geographically nearest cluster and the local agent links it with a few nearby nodes to provide connectivity. During this integration, a few consensus rounds involving the new node might not succeed (for example, if the new node had not yet received all necessary links or state to participate in consensus, it might miss some early messages). However, this phase is brief; by $t=120$, the success rate is back above 90\%, indicating the new node is fully connected and participating in the consensus process. Thereafter, the network continues normally with one additional node. We note that at no point did the network become fully partitioned – even immediately after the leave event, the system’s connectivity invariant ensured that the remaining nodes stayed as one connected component (the success rate dip was due to tasks in progress during the moment of churn, not a lasting partition). For the join event, the connectivity was maintained throughout (the new node initially was isolated, but since it was not required for ongoing consensus among existing nodes, existing nodes’ success was unaffected; only tasks involving the new node’s input had to wait until it was linked). In contrast, a baseline without such dynamic reconfiguration would suffer a persistent partition after a node leaves (until some external repair occurs) – for example, if a critical node in a ring topology drops out, the ring could break into two segments permanently, causing zero success rate for any consensus spanning those segments. Our approach avoids this by design. Recovery time is a critical metric here: the experiment shows our system can recover in under 25 time units for a leave, and almost immediately for a join (aside from the new node’s own full activation). These results confirm that the proposed approach provides robust churn tolerance. The combination of proactive invariants (to prevent disconnections) and reactive local healing (to quickly mend any breaks and incorporate new arrivals) ensures that network performance remains high and only experiences a transient hit during churn. This is a key requirement for long-running autonomous networks, where nodes may frequently come and go – the network must remain resilient and not require manual reconfiguration every time.
+\subsubsection{Baselines Comparison}
+\begin{table}[t]
+\caption{Churn Recovery Time (seconds) after Join/Leave Events.}
+\label{tab:churn_recovery}
+\centering
+\begin{tabular}{l c c}
+\hline
+Method & Join Recovery$\downarrow$ & Leave Recovery$\downarrow$ \\
+\hline
+Proposed MARL & 30--60 & 40--70 \\
+A3C (single-agent) & 80--140 & 100--160 \\
+Heuristic ($d_{\max}{=}3$) & 60--110 & 70--120 \\
+Random & $>$150 & $>$150 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study of System Components}
+In the final experiment, we perform an ablation study to quantify the contribution of each major design component in our system. We compare the full proposed system against modified versions with one component removed or altered. The evaluation is done in a representative scenario (e.g. a network of 100 nodes with moderate mobility) where all methods are tested under identical conditions. We consider the following variants for ablation: (a) Full MARL System – the complete approach as described, including multi-agent partitioning, cross-partition halo messaging, and the safety guardrails (connectivity preservation and rate limiting). (b) No Cross-Partition Coordination – a variant where each agent operates in isolation without exchanging halo summaries or inter-agent messages. This effectively disables the lightweight signaling between partitions, so agents lack global topology awareness beyond their partition. (c) No Safety Invariants – a variant that removes the safety layer’s connectivity and rate-limit constraints. The MARL agents in this setting are allowed to add/remove links without the rule that forbids breaking connectivity (and without the one-edit-per-step limit or cooldown). This tests the impact of our safe-action enforcement on network stability. (d) Single-Agent (Monolithic) – a baseline where we use a single centralized agent to control the entire network of 100 nodes (without any partitioning). This examines the necessity of multi-agent scaling and whether a single agent with the same training algorithm can handle the complexity of a large network. For each variant, we measure the achieved consensus success rate, the average end-to-end delay, and other secondary metrics like average node degree or link churn rate to gauge aggressiveness of topology edits. All variants use the same training time or convergence criteria (for fairness, the single-agent policy was trained with the 100-node environment, whereas the multi-agent policies were trained with variable smaller partitions). The expectation is that removing any of the proposed features will degrade performance: without inter-agent coordination, partitions may struggle with global consensus; without safety constraints, the policy might produce risky topologies; and a single agent might not scale well or learn as efficiently for large networks.
+\begin{figure}[tb]
+\centering
+%\vspace{-0.2cm}
+\includegraphics[width=0.5\textwidth]{image/4.png}
+\caption{System framework with three planes}
+\label{pc}
+%\vspace{-0.6cm}
+\end{figure}
+Figure 7 summarizes the impact of each ablated component on performance. The Full system (blue bars) provides the best reliability and speed: about 90\% success rate and 1.0 ms average latency in this scenario. Removing the cross-partition coordination (orange bars) causes a noticeable drop in success rate (to ~78\%) and a higher delay (~1.2 ms). Without coordination, agents in different partitions cannot efficiently share information about global topology changes or load, leading to suboptimal decisions – for example, two partitions might inadvertently both remove their inter-connecting links because neither is aware of the other’s state, temporarily partitioning the network. This explains the success rate reduction: some consensus tasks fail when they involve multiple partitions that aren’t well-connected due to lack of coordination. The increase in delay also reflects that uncoordinated agents may not create the globally shortest paths (each optimizing only locally). Next, the variant with no safety invariants (gray bars) suffers the most in terms of success rate (~72\% only). This is expected because without the connectivity-preservation rule, the learned policy sometimes removes too many links in pursuit of lower latency or energy, inadvertently causing network segmentation or fragility. We observed instances where the no-safety agent temporarily disconnected a portion of the network (e.g., creating two clusters with only a tenuous link that gets dropped), leading to consensus failures until the topology eventually recovered. Those failures drag down the average success significantly. Interestingly, the average delay for the successful rounds in the no-safety case is the lowest (~0.9 ms), since the agent is essentially over-pruning the network to minimize latency (at the expense of reliability). This highlights a key trade-off: without safety constraints, the policy may find very low-latency topologies that unfortunately are not robust – underscoring the necessity of our safety guardrails to keep the policy in a reliable operating regime. Finally, the single-agent variant (green bars) achieves only ~80\% success and the highest latency (~1.5 ms). The single centralized agent controlling 100 nodes faced difficulties in training and execution: the observation space is much larger, and it cannot act as quickly on local topology issues as multiple regional agents can. The higher delay suggests that a single agent was less effective at creating and maintaining short paths across the network – likely because it could not specialize to local conditions and possibly learned a more conservative policy. Moreover, without horizontal scaling, the single agent became a bottleneck; in a real deployment, one controller might not keep up with real-time decisions for so many nodes, whereas our distributed agent approach divides the decision workload. In summary, the ablation study confirms that each proposed component of our system is instrumental to its overall performance. The cross-partition (halo) messaging notably improves global consensus consistency and efficiency, the safety layer is crucial for preventing catastrophic connectivity losses (ensuring the reliability of the solution), and the multi-agent partitioned architecture is vital for scaling to large networks with low latency. The full system’s balance of these elements yields the highest success rate and lowest delay, whereas removing any one feature leads to a measurable degradation. These insights validate our design choices: lightweight coordination, safety constraints, and multi-agent scaling are all needed to achieve a safe, scalable, and high-performance topology optimization in dynamic ad hoc networks. The experimental results across all four studies demonstrate a comprehensive picture – the proposed MARL-based approach consistently outperforms baseline and ablated alternatives in scalability, mobility and churn robustness, and ablation tests, thereby proving its effectiveness for optimizing dynamic network topologies in a wide range of conditions.
+
+\section{Conclusion}
+This work set out to make online topology control for trustworthy, dynamic wireless networks both learnable and deployable. We presented a system that couples CTDE, a graph-aware shared policy for execution, and a centralized critic for training. Around this learning core, we co-designed a data plane that runs a tight observe–decide–merge–apply loop. A control plane that handles scaling and localized rebalancing. And a learning plane independent of the execution. Cross-partition coordination is achieved without high-bandwidth sharing by combining read-only halo summaries with short neighbor messages. Our preliminary single-agent PPO2 study on a ten-node urban-grid scenario validated the environment, reward shaping, and basic optimization loop. The learned sparse backbone achieves order-of-magnitude reductions in delay and energy relative to a full mesh at a modest drop in consensus success rate, placing the learned policy at a favorable point on the Pareto frontier. This baseline demonstrates that end-to-end policy optimization can exploit structural trade-offs in realistic mobility and channel conditions, and it provides a reference point for the multi-agent setting. Future work will scale to multi-agent MAPPO2 with parameter sharing and set-pooled critics, validating m-robustness across wide agent counts and mobility regimes. In summary, we present a coherent blueprint for safe, scalable, and bandwidth-aware multi-agent topology optimization, comprising actor-only deployment with fixed inputs, a set-pooled critic tolerant to variations in agent count, boundary coordination with minimal message size, and an execution channel that ensures invariants. The full MARL system is positioned to carry these gains to dynamic, multi-partition environments with node churn, maintaining connectivity and consensus success rate essential for trustworthy operation.
+
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{ref.bib}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{image/董中旭-白底.jpg}}]
+% {Zhongxu Dong}{\space}received the B.Eng. degree in electrical engineering from the University of Electronic Science and Technology of China (UESTC), Chengdu, China, in 2021. He received the M.Sc.R. degree with the Agile Tomography Group, School of Engineering, the University of Edinburgh, Edinburgh, U.K. He is currently pursuing the Ph.D. degree with the Trustworthy lab, James Watt School of Engineering, the University of Glasgow.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{image/zongyao.jpg}}]
+% {Zongyao Li}{\space}received the B.Eng. degree in electronics and electrical engineering from the University of Electronic Science and Technology of China (UESTC) in 2020 and the Ph.D. degree from the University of Glasgow in 2025. His research interests include distributed consensus, computer system, machine learning applications, wireless communication systems, and connected and autonomous systems
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{image/mide.jpg}}]
+% {De Mi} {\space} (Senior Member, IEEE) received the B.Eng. degree from the Beijing Institute of Technology, China, the M.Sc. degree from Imperial College London and the Ph.D. degree from the University of Surrey, U.K. He is currently an Associate Professor and the Head of the Future Information Networks (FINET) Research Cluster with the College of Computing at Birmingham City University. De’s work has been supported by national and international strategic programmes (e.g., Eureka Globalstars, EPSRC CHEDDAR Hub, DSIT 5G Innovation Regions etc.) and has been published in high-impact journals/conferences, and he was the recipient of the IEEE Broadcast Technology Society 2020 Scott Helt Memorial Award (Best Paper), IEEE UCET 2020, IECON 2023, Blockchain/BSS 2023, Ucom 2024 Best Paper awards. De has been serving as an editor/guest editor for various IEEE venues, e.g., IEEE Transactions on Vehicular Technology, IEEE Network, IEEE Communications Standards Magazine, IEEE/CIC China Communications, IEEE/KICS Journal of Communications and Networks, and a publicity/symposium/session/workshop co-chair for various conferences, e.g., IEEE ICC, GLOBECOM, VTC, WCNC, ICCC, MECOM, ICIT, ICRA, WCCI, etc. His research interests and expertise span a range of areas in wireless communications and signal processing, including B5G/6G radio access techniques, hypercomplex signal processing, next-generation broadcast and multicast, future open networks and space-air-ground-water integrated systems.
+% \end{IEEEbiography}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{image/lei.jpg}}]
+% {Lei Zhang} {\space} (Senior Member, IEEE) is a Professor of trustworthy systems at the University of Glasgow. He has combined research experience on wireless communications and networks, distributed and trustworthy systems for IoT, blockchain, and autonomous systems with academia and industry. His 20 patents were granted/filed in more than 30 countries/regions. He published 3 books, and 150+ papers in peer-reviewed journals, conferences and edited books. He received the IEEE Internet of Things Journal Best Paper Award 2022, the IEEE ComSoc TAOS Technical Committee Best Paper Award 2019, and the IEEE ICEICT’21 Best Paper Award. He is the founding chair of the IEEE Special Interest Group on Wireless Blockchain Networks, IEEE Cognitive Networks Technical Committee (TCCN). He delivered tutorials in IEEE ICC’20, IEEE PIMRC’20, IEEE Globecom’21, Globecom’22, IEEE VTC’21 Fall, IEEE ICBC’21, and EUSIPCO’21. He is an Associate Editor of IEEE Transactions on Network Science and Engineering, IEEE Internet of Things Journal, IEEE Wireless Communications Letters, and Digital Communications and Networks; and a Guest Editor of IEEE Journal on Selected Areas in Communications and IEEE Network. 
+% \end{IEEEbiography}
+
+
+\end{document}
