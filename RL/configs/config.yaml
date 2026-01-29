@@ -1,0 +1,177 @@
+model:
+  slots: 10
+  gnn_layers: 3
+  lstm_hidden: 128
+  msg_dim: 32
+  role_dim: 16
+
+# Simulation size controls (to match expected vis_test style results)
+sim:
+  num_nodes: 100
+
+physics:
+  D0: 200.0
+  B: 2000000.0
+  MSG_BITS: 4000.0
+  # 节点空间密度 γ（论文中2-D Poisson分布密度）
+  # 若设置 GAMMA>0 且 R_A=0，则环境按 R_a = sqrt(n/(pi*gamma)) 自动计算通信半径
+  GAMMA: 0.001326
+  # 失败率 shaping 用的 epsilon：failure_cost = -log(max(eps, success))
+  EPS_SUCCESS: 1.0e-12
+  P_NI: 0.1
+  # 干扰/噪声随“边密度/并发强度”增加的系数（让拓扑优化真正影响 success/delay/energy）
+  # effective_P_NI = P_NI * (1 + INTERF_K * edge_density)
+  INTERF_K: 20.0
+  PT: 1.0
+  ALPHA: 1.7
+  Z: 1.0
+  # 通信半径 R_a（论文中的接收节点分布半径），0 表示由 GAMMA 自动计算
+  R_A: 0.0
+  # 建筑遮挡(NLOS)时的额外衰减系数：越小表示遮挡越严重
+  NLOS_ATTEN: 0.25
+  MAX_DELAY: 1.0
+  MAX_ENERGY: 200.0
+  # CI path loss model (tuned for 100m blocks)
+  USE_CI_MODEL: true
+  FC_GHZ: 28.0
+  PL_N_LOS: 2.0
+  PL_N_NLOS: 2.9
+  PL_SIGMA_LOS: 3.0
+  PL_SIGMA_NLOS: 8.0
+  CORNER_LOSS_DB: 8.0
+  CORNER_LOSS_LOS_DB: 4.0
+  PL_CUTOFF_DB: 110.0
+  MAX_LINK_DIST: 150.0
+  PT_LIN: 0.2
+  NOISE_POWER_LIN: 1.0e-12
+
+safety:
+  min_cross_edges_per_neighbor: 2
+  deltaE_budget_per_step: 30
+  cooldown_steps: 20
+  # 是否强制“邻接分区跨边配额”由安全模块自动补齐。
+  # 训练时建议关闭（让策略自己学会在需要时建立跨边），否则会引入非学习的结构性偏置。
+  enforce_cross_edge_quota: false
+
+halo:
+  mode: 'rhop'
+  r: 1
+  radius: 1.0
+  buckets: 8
+  topk: 4
+
+merge:
+  cross_policy: 'and'
+  score_thresh: 0.2
+
+partition:
+  scheme: 'geo_honeycomb'
+  cell_size: 100.0
+  rebalance: 'local_min_cost_flow'
+  # 允许每个agent的容量略微超载，避免“远距离溢出分配”导致治理区域凸包膨胀/重叠
+  overload_tol: 1.3
+  rho_high: 0.90
+  rho_low: 0.58
+  T_high: 120
+  T_low: 150
+
+messaging:
+  period: 1
+  ttl: 3
+  dropout: 0.2
+  max_msgs_per_step: 1
+  enable_quant_noise: true
+  quant_levels: 32
+  quant_eps: 0.01
+
+training:
+  gamma: 0.99
+  gae_lambda: 0.95
+  lr: 0.0003
+  clip: 0.15
+  # KL目标略放宽，避免lr过早被压到极小导致训练冻结
+  target_kl: 0.03
+  adapt_lr_on_kl: true
+  truncation_steps: 128
+  # KL自适应降lr的下限（不要太低，否则无法学习）
+  min_lr: 0.0001
+  rollout_len: 512
+  epochs: 4
+  m_min: 8
+  m_max: 32
+  m_fixed: 10
+  episodes: 2000
+  max_steps_per_episode: 256
+  early_stop:
+    enable: true
+    metric: 'success_rate'
+    patience_episodes: 200
+    min_delta: 0.002
+  checkpoint_interval_episodes: 100
+  course_schedule: []
+
+loss:
+  value_coef: 0.5
+  value_clip: 2.0
+  normalize_returns: true
+  log_value_mean: true
+  # === 数学改进参数 (v12) ===
+  # 增强熵正则化系数 (配合条件熵计算)
+  entropy_coef: 0.02
+  # PopArt归一化更新率 (解决return分布非平稳问题)
+  popart_beta: 0.0003
+
+autoscale:
+  enable: false
+  target_slots_per_agent: 10
+  rho_high: 0.90
+  rho_low: 0.58
+  min_agents: 2
+  max_agents: 128
+  warmup_steps: 50
+  hysteresis_steps_high: 100
+  hysteresis_steps_low: 150
+
+city:
+  enable: true
+  grid_stride: 100.0
+  road_width: 25.0
+  speed_mean: 3.0
+  speed_std: 0.5
+  turn_prob: 0.2
+  wrap: true  # Wrap nodes at boundary instead of leaving
+
+region:
+  bbox: [ -300.0, -300.0, 300.0, 300.0 ]
+  join_margin: 0.0
+  leave_margin: 50.0  # Extra margin before node is considered "left"
+
+churn:
+  join_rate: 0.0
+  leave_policy: 'geofence'
+  max_nodes: 120
+  min_nodes: 100
+
+topology_init:
+  k_nearest: 5
+  snr_thresh: 0.0
+  # 初始拓扑模式：
+  # - 'knn': K近邻（原始行为，基于距离）
+  # - 'clique': 全连接但优先内部边，跨区域边限制<50m
+  # - 'knn_internal': K近邻优先内部边，每节点只加1条最短跨区域边保证连通
+  init_mode: 'knn'
+
+viz:
+  enable: true
+  save_every_episodes: 50
+  draw_topology: true
+  draw_agent_coverage: true
+  max_graph_nodes_for_plot: 400
+  dpi: 160
+  # 论文图片设置 - 设为false可生成无图例/标尺的干净图片
+  show_legend: false        # 是否显示Agent图例
+  show_scale_bar: false     # 是否显示比例尺
+  show_stats: false         # 是否显示统计信息文字
+
+logging:
+  csv_metrics: true
