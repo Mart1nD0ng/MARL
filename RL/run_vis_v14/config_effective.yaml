@@ -1,0 +1,144 @@
+autoscale:
+  enable: true
+  hysteresis_steps_high: 100
+  hysteresis_steps_low: 150
+  max_agents: 128
+  min_agents: 2
+  rho_high: 0.9
+  rho_low: 0.58
+  target_slots_per_agent: 10
+  warmup_steps: 50
+churn:
+  join_rate: 0.0
+  leave_policy: geofence
+  max_nodes: 120
+  min_nodes: 80
+city:
+  enable: true
+  grid_stride: 100.0
+  road_width: 25.0
+  speed_mean: 3.0
+  speed_std: 0.5
+  turn_prob: 0.2
+  wrap: true
+halo:
+  buckets: 8
+  mode: rhop
+  r: 1
+  radius: 1.0
+  topk: 4
+logging:
+  csv_metrics: true
+loss:
+  entropy_coef: 0.02
+  log_value_mean: true
+  normalize_returns: true
+  popart_beta: 0.0003
+  value_clip: 2.0
+  value_coef: 0.5
+merge:
+  cross_policy: and
+  score_thresh: 0.2
+messaging:
+  dropout: 0.2
+  enable_quant_noise: true
+  max_msgs_per_step: 1
+  period: 1
+  quant_eps: 0.01
+  quant_levels: 32
+  ttl: 3
+model:
+  gnn_layers: 3
+  lstm_hidden: 128
+  msg_dim: 32
+  role_dim: 16
+  slots: 10
+partition:
+  T_high: 120
+  T_low: 150
+  cell_size: 100.0
+  overload_tol: 1.3
+  rebalance: local_min_cost_flow
+  rho_high: 0.9
+  rho_low: 0.58
+  scheme: geo_honeycomb
+physics:
+  ALPHA: 1.7
+  B: 2000000.0
+  CORNER_LOSS_DB: 8.0
+  CORNER_LOSS_LOS_DB: 4.0
+  D0: 200.0
+  EPS_SUCCESS: 1.0e-12
+  FC_GHZ: 28.0
+  GAMMA: 0.001326
+  INTERF_K: 20.0
+  MAX_DELAY: 1.0
+  MAX_ENERGY: 200.0
+  MAX_LINK_DIST: 150.0
+  MSG_BITS: 4000.0
+  NLOS_ATTEN: 0.25
+  NOISE_POWER_LIN: 1.0e-12
+  PL_CUTOFF_DB: 110.0
+  PL_N_LOS: 2.0
+  PL_N_NLOS: 2.9
+  PL_SIGMA_LOS: 3.0
+  PL_SIGMA_NLOS: 8.0
+  PT: 1.0
+  PT_LIN: 0.2
+  P_NI: 0.1
+  R_A: 0.0
+  USE_CI_MODEL: true
+  Z: 1.0
+region:
+  bbox:
+  - -300.0
+  - -300.0
+  - 300.0
+  - 300.0
+  join_margin: 0.0
+  leave_margin: 50.0
+safety:
+  cooldown_steps: 20
+  deltaE_budget_per_step: 30
+  enforce_cross_edge_quota: false
+  min_cross_edges_per_neighbor: 2
+sim:
+  num_nodes: 100
+topology_init:
+  init_mode: knn
+  k_nearest: 5
+  snr_thresh: 0.0
+training:
+  adapt_lr_on_kl: true
+  checkpoint_interval_episodes: 100
+  clip: 0.15
+  course_schedule: []
+  early_stop:
+    enable: true
+    metric: success_rate
+    min_delta: 0.002
+    patience_episodes: 200
+  episodes: 200
+  epochs: 4
+  gae_lambda: 0.95
+  gamma: 0.99
+  lr: 0.0003
+  m_fixed: 10
+  m_max: 32
+  m_min: 8
+  max_steps_per_episode: 256
+  min_lr: 0.0001
+  rollout_len: 512
+  run_name: run_vis_v14
+  target_kl: 0.03
+  truncation_steps: 128
+viz:
+  dpi: 160
+  draw_agent_coverage: true
+  draw_topology: true
+  enable: true
+  max_graph_nodes_for_plot: 400
+  save_every_episodes: 40
+  show_legend: false
+  show_scale_bar: false
+  show_stats: false
